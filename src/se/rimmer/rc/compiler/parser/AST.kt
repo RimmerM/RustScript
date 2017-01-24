@@ -4,17 +4,18 @@ import java.math.BigDecimal
 import java.math.BigInteger
 import java.util.*
 
-data class Module(val name: String) {
+class Module(val name: Qualified) {
     val imports = ArrayList<Import>()
     val decls = ArrayList<Decl>()
     val ops = HashMap<String, Fixity>()
 }
 
-data class Qualified(val name: String, val qualifier: List<String>)
 data class Import(val source: Qualified, val localName: String)
 
 enum class FixityKind { Left, Right, Prefix }
 data class Fixity(val kind: FixityKind, val precedence: Int)
+
+data class Qualified(val name: String, val qualifier: List<String>)
 
 interface Literal
 data class RationalLiteral(val v: BigDecimal): Literal
@@ -77,8 +78,8 @@ data class Alt(val pat: Pat, val alias: String?, val body: Expr)
 interface Decl
 data class FunDecl(val name: String, val args: List<FunArg>, val ret: Type?, val body: Expr): Decl
 data class TypeDecl(val type: SimpleType, val target: Type): Decl
-data class DataDecl(val type: SimpleType, val cons: List<Con>): Decl
+data class DataDecl(val type: SimpleType, val cons: List<Constructor>): Decl
 data class ForeignDecl(val externalName: String, val internalName: String, val type: Type): Decl
 
-data class Con(val name: String, val content: Type?)
+data class Constructor(val name: String, val content: Type?)
 data class FunArg(val name: String, val type: Type?)

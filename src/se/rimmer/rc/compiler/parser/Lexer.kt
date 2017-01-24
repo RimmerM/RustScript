@@ -21,6 +21,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
 
     private val hasMore: Boolean get() = p < text.length
     private val current: Char get() = text[p]
+    private fun hasMore(index: Int) = p + index < text.length
     private fun next(index: Int) = text[p + index]
 
     /**
@@ -163,11 +164,11 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 p++
                 break
             } else {
-                if (current == '\"') {
+                if(current == '\"') {
                     // Terminate the string.
                     p++
                     break
-                } else if (!hasMore || current == '\n') {
+                } else if(!hasMore || current == '\n') {
                     // If the line ends without terminating the string, we issue a warning.
                     diagnostics.warning("Missing terminating quote in string literal")
                     break
@@ -205,7 +206,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         if(ch != '\'') {
             diagnostics.warning("Multi-character character constant")
             while (current != '\'') {
-                if (!hasMore || current == '\n') {
+                if(!hasMore || current == '\n') {
                     diagnostics.warning("Missing terminating ' character in char literal")
                     break
                 }
@@ -302,7 +303,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         }
 
         // Create part before decimal point.
-        while(Character.isDigit(text[c])) {
+        while(text.length > c && Character.isDigit(text[c])) {
             val n = Character.digit(text[c], 10)
             out *= 10.0
             out += n
@@ -310,12 +311,12 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         }
 
         // Check if there is a fractional part.
-        if(text[c] == '.') {
+        if(text.length > c && text[c] == '.') {
             c++
             var dec = 0.0
             var dpl = 0
 
-            while(Character.isDigit(text[c])) {
+            while(text.length > c && Character.isDigit(text[c])) {
                 val n = Character.digit(text[c], 10)
                 dec *= 10.0
                 dec += n
@@ -331,22 +332,24 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         }
 
         // Check if there is an exponent.
-        if(text[c] == 'E' || text[c] == 'e') {
+        if(text.length > c && (text[c] == 'E' || text[c] == 'e')) {
             c++
 
             // Check sign.
             var signNegative = false
-            if(text[c] == '+') {
-                c++
-            } else if(text[c] == '-') {
-                c++
-                signNegative = true
+            if(text.length > c) {
+                if(text[c] == '+') {
+                    c++
+                } else if(text[c] == '-') {
+                    c++
+                    signNegative = true
+                }
             }
 
             // Has exp. part;
             var exp = 0.0
 
-            while(Character.isDigit(text[c])) {
+            while(text.length > c && Character.isDigit(text[c])) {
                 val n = Character.digit(text[c], 10)
                 exp *= 10.0
                 exp += n
@@ -372,13 +375,14 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
      */
     fun parseIntLiteral(base: Int): Long {
         var res = 0L
-        var c = Character.digit(current, base)
-        while(c != -1) {
+        do {
+            val c = Character.digit(current, base)
+            if(c == -1) break
             res *= base
             res += c
             p++
-            c = Character.digit(current, base)
-        }
+        } while(c != -1 && hasMore)
+
         return res
     }
 
@@ -391,7 +395,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         token.kind = Token.Kind.Literal
 
         // Parse the type of this literal.
-        if(next(1) == 'b' || next(1) == 'B') {
+        if(hasMore(2) && (next(1) == 'b' || next(1) == 'B')) {
             if(isBit(next(2))) {
                 // This is a binary literal.
                 p += 2
@@ -400,7 +404,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 // Parse a normal integer.
                 token.intPayload = parseIntLiteral(10)
             }
-        } else if(next(1) == 'o' || next(1) == 'O') {
+        } else if(hasMore(2) && (next(1) == 'o' || next(1) == 'O')) {
             if(isOctit(next(2))) {
                 // This is an octal literal.
                 p += 2
@@ -409,7 +413,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 // Parse a normal integer.
                 token.intPayload = parseIntLiteral(10)
             }
-        } else if(next(1) == 'x' || next(1) == 'X') {
+        } else if(hasMore(2) && (next(1) == 'x' || next(1) == 'X')) {
             if(isHexit(next(2))) {
                 // This is a hexadecimal literal.
                 p += 2
@@ -420,28 +424,38 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             }
         } else {
             // Check for a dot or exponent to determine if this is a float.
+            var isFloat = false
             var d = p + 1
-            while(true) {
+            while(d < text.length) {
                 if(text[d] == '.') {
                     // The first char after the dot must be numeric, as well.
-                    if(isDigit(text[d + 1])) break
+                    if(isDigit(text[d + 1])) {
+                        isFloat = true
+                        break
+                    }
                 } else if(text[d] == 'e' || text[d] == 'E') {
                     // This is an exponent. If it is valid, the next char needs to be a numeric,
                     // with an optional sign in-between.
-                    if(text[d+1] == '+' || text[d+1] == '-') d++
-                    if(isDigit(text[d + 1])) break
+                    if(text[d + 1] == '+' || text[d + 1] == '-') d++
+                    if(isDigit(text[d + 1])) {
+                        isFloat = true
+                        break
+                    }
                 } else if(!isDigit(text[d])) {
                     // This wasn't a valid float.
-                    token.intPayload = parseIntLiteral(10)
-                    return
+                    break
                 }
 
                 d++
             }
 
-            // Parse a float literal.
-            token.type = Token.Type.Float
-            token.floatPayload = readFloat()
+            if(isFloat) {
+                // Parse a float literal.
+                token.type = Token.Type.Float
+                token.floatPayload = readFloat()
+            } else {
+                token.intPayload = parseIntLiteral(10)
+            }
         }
     }
 
@@ -639,7 +653,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         fun compare(constant: String): Boolean {
             val src = c
             var ci = 0
-            while(ci < constant.length && constant[ci] == text[c]) {
+            while(c < text.length && ci < constant.length && constant[ci] == text[c]) {
                 ci++
                 c++
             }
@@ -726,7 +740,11 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         // Read the identifier name.
         var length = 1
         val start = p
-        while((p < text.length - 1) && isIdentifier(text[(++p)])) length++
+        p++
+        while((p < text.length) && isIdentifier(text[p])) {
+            length++
+            p++
+        }
 
         qualifier = text.substring(start, start + length)
     }
@@ -745,7 +763,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             token.singleMinus = false
 
             // Check if we are inside a string literal.
-            if (formatState == 3) {
+            if(formatState == 3) {
                 token.sourceColumn = (p - l) + tabs * (kTabWidth - 1)
                 token.sourceLine = line
                 formatState = 0
@@ -754,6 +772,10 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 token.type = Token.Type.String
                 token.kind = Token.Kind.Literal
                 token.idPayload = parseStringLiteral()
+
+                isNewItem = false
+                token.length = (p - b)
+                break
             } else {
                 // Skip any whitespace and comments.
                 skipWhitespace()
@@ -763,14 +785,14 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             }
 
             // Check for the end of the file.
-            if (!hasMore) {
+            if(!hasMore) {
                 token.kind = Token.Kind.Special
-                if (blockCount > 0) token.type = Token.Type.EndOfBlock
+                if(blockCount > 0) token.type = Token.Type.EndOfBlock
                 else token.type = Token.Type.EndOfFile
             }
 
             // Check if we need to insert a layout token.
-            else if (token.sourceColumn == indentation && !isNewItem) {
+            else if(token.sourceColumn == indentation && !isNewItem) {
                 token.type = Token.Type.Semicolon
                 token.kind = Token.Kind.Special
                 isNewItem = true
@@ -779,20 +801,20 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             }
 
             // Check if we need to end a layout block.
-            else if (token.sourceColumn < indentation) {
+            else if(token.sourceColumn < indentation) {
                 token.type = Token.Type.EndOfBlock
                 token.kind = Token.Kind.Special
             }
 
             // Check for start of string formatting.
-            else if (formatState == 1) {
+            else if(formatState == 1) {
                 token.kind = Token.Kind.Special
                 token.type = Token.Type.StartOfFormat
                 formatState = 2
             }
 
             // Check for end of string formatting.
-            else if (formatState == 2 && current == kFormatEnd) {
+            else if(formatState == 2 && current == kFormatEnd) {
                 // Issue a format end and make sure the next token is parsed as a string literal.
                 // Don't skip the character - ParseStringLiteral skips one at the beginning.
                 token.kind = Token.Kind.Special
@@ -801,19 +823,19 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             }
 
             // Check for integral literals.
-            else if (isDigit(current)) {
+            else if(isDigit(current)) {
                 parseNumericLiteral()
             }
 
             // Check for character literals.
-            else if (current == '\'') {
+            else if(current == '\'') {
                 token.charPayload = parseCharLiteral()
                 token.kind = Token.Kind.Literal
                 token.type = Token.Type.Char
             }
 
             // Check for string literals.
-            else if (current == '\"') {
+            else if(current == '\"') {
                 // Since string literals can span multiple lines, this may update mLocation.line.
                 token.type = Token.Type.String
                 token.kind = Token.Kind.Literal
@@ -821,30 +843,30 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             }
 
             // Check for special operators.
-            else if (isSpecial(current)) {
+            else if(isSpecial(current)) {
                 parseSpecial()
             }
 
             // Parse symbols.
-            else if (isSymbol(current)) {
+            else if(isSymbol(current)) {
                 parseSymbol()
                 token.idPayload = qualifier
             }
 
             // Parse special unicode symbols.
-            else if (parseUniSymbol()) {
-                if (token.kind == Token.Kind.Identifier)
+            else if(parseUniSymbol()) {
+                if(token.kind == Token.Kind.Identifier)
                     token.idPayload = qualifier
             }
 
             // Parse ConIDs
-            else if (Character.isUpperCase(current)) {
+            else if(Character.isUpperCase(current)) {
                 parseQualifier()
                 token.idPayload = qualifier
             }
 
             // Parse variables and reserved ids.
-            else if (Character.isLowerCase(current) || current == '_') {
+            else if(Character.isLowerCase(current) || current == '_') {
                 parseVariable()
                 token.idPayload = qualifier
             }

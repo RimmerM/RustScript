@@ -64,7 +64,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
         val cons = sepBy1(Token.Type.opBar) {
             val conName = parseConID()
             val content = maybeParens { parseType() }
-            Con(conName, content)
+            Constructor(conName, content)
         }
         return DataDecl(name, cons)
     }
@@ -98,9 +98,10 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
     }
 
     fun parseExpr(): Expr {
-        val rows = sepBy1(Token.Type.Semicolon) { parseTypedExpr() }
-        if(rows.size == 1) return rows[0]
-        else return MultiExpr(rows)
+        val rows = withLevel {
+            sepBy1(Token.Type.Semicolon) { parseTypedExpr() }
+        }
+        return if(rows.size == 1) rows[0] else MultiExpr(rows)
     }
 
     fun parseTypedExpr(): Expr {
@@ -326,7 +327,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
                 eat()
                 val expr = parseTypedExpr()
                 expect(Token.Type.EndOfFormat, true)
-                expect(Token.Type.String, false)
+                expect(Token.Type.String)
                 chunks.add(FormatChunk(token.idPayload, expr))
                 eat()
             }
