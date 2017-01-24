@@ -668,7 +668,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         when(current) {
             '_' -> token.type = Token.Type.kw_
             'a' -> {
-                if(text[c] == 's') { c++; token.type = Token.Type.kwAs }
+                if(text.length > c && text[c] == 's') { c++; token.type = Token.Type.kwAs }
             }
             'c' -> {
                 if(compare("lass")) token.type = Token.Type.kwClass
@@ -676,28 +676,28 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             'd' -> {
                 if(compare("ata")) token.type = Token.Type.kwData
                 else if(compare("eriving")) token.type = Token.Type.kwDeriving
-                else if(text[c] == 'o') { c++; token.type = Token.Type.kwDo }
+                else if(text.length > c && text[c] == 'o') { c++; token.type = Token.Type.kwDo }
             }
             'e' -> {
                 if(compare("lse")) token.type = Token.Type.kwElse
             }
             'f' -> {
                 if(compare("oreign")) token.type = Token.Type.kwForeign
-                else if(text[c] == 'o' && text[c + 1] == 'r') { c += 2; token.type = Token.Type.kwFor }
-                else if(text[c] == 'n') { c += 1; token.type = Token.Type.kwFn }
+                else if(text.length > c + 1 && text[c] == 'o' && text[c + 1] == 'r') { c += 2; token.type = Token.Type.kwFor }
+                else if(text.length > c && text[c] == 'n') { c += 1; token.type = Token.Type.kwFn }
             }
             'i' -> {
-                if(text[c] == 'f') { c++; token.type = Token.Type.kwIf }
+                if(text.length > c && text[c] == 'f') { c++; token.type = Token.Type.kwIf }
                 else if(compare("mport")) token.type = Token.Type.kwImport
-                else if(text[c] == 'n' && !isIdentifier(text[c + 1])) { c++; token.type = Token.Type.kwIn }
+                else if(text.length > c + 1 && text[c] == 'n' && !isIdentifier(text[c + 1])) { c++; token.type = Token.Type.kwIn }
                 else if(compare("nfix")) {
-                    if(text[c] == 'l') { c++; token.type = Token.Type.kwInfixL }
-                    else if(text[c] == 'r') { c++; token.type = Token.Type.kwInfixR }
+                    if(text.length > c && text[c] == 'l') { c++; token.type = Token.Type.kwInfixL }
+                    else if(text.length > c && text[c] == 'r') { c++; token.type = Token.Type.kwInfixR }
                     else token.type = Token.Type.kwInfix
                 } else if(compare("nstance")) token.type = Token.Type.kwInstance
             }
             'l' -> {
-                if(text[c] == 'e' && text[c+1] == 't') { c += 2; token.type = Token.Type.kwLet }
+                if(text.length > c + 1 && text[c] == 'e' && text[c+1] == 't') { c += 2; token.type = Token.Type.kwLet }
             }
             'm' -> {
                 if(compare("odule")) token.type = Token.Type.kwModule
@@ -707,7 +707,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 if(compare("ewtype")) token.type = Token.Type.kwNewType
             }
             'o' -> {
-                if(text[c] == 'f') { c++; token.type = Token.Type.kwOf }
+                if(text.length > c && text[c] == 'f') { c++; token.type = Token.Type.kwOf }
             }
             'p' -> {
                 if(compare("refix")) token.type = Token.Type.kwPrefix
@@ -717,7 +717,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 else if(compare("ype")) token.type = Token.Type.kwType
             }
             'v' -> {
-                if(text[c] == 'a' && text[c+1] == 'r') { c += 2; token.type = Token.Type.kwVar }
+                if(text.length > c + 1 && text[c] == 'a' && text[c+1] == 'r') { c += 2; token.type = Token.Type.kwVar }
             }
             'w' -> {
                 if(compare("here")) token.type = Token.Type.kwWhere
@@ -728,7 +728,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         // We have to read the longest possible lexeme.
         // If a reserved keyword was found, we check if a longer lexeme is possible.
         if(token.type != Token.Type.VarID) {
-            if(isIdentifier(text[c])) {
+            if(text.length > c && isIdentifier(text[c])) {
                 token.type = Token.Type.VarID
             } else {
                 p = c

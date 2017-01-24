@@ -35,7 +35,7 @@ data class TupType(val fields: List<TupField>): Type
 data class AppType(val base: Type, val apps: List<Type>): Type
 data class ConType(val name: Qualified): Type
 data class GenType(val name: String): Type
-data class FunType(val args: List<Type>, val ret: Type): Type
+data class FunType(val args: List<ArgDecl>, val ret: Type): Type
 
 data class SimpleType(val name: String, val kind: List<String>)
 data class TupField(val type: Type, val name: String?)
@@ -57,7 +57,7 @@ data class CoerceExpr(val target: Expr, val type: Type): Expr
 data class FieldExpr(val target: Expr, val field: Expr): Expr
 data class ConstructExpr(val type: Type, val args: List<Expr>): Expr
 data class TupExpr(val args: List<TupArg>): Expr
-data class FunExpr(val args: List<FunArg>, val body: Expr): Expr
+data class FunExpr(val args: List<Arg>, val body: Expr): Expr
 data class FormatExpr(val chunks: List<FormatChunk>): Expr
 data class CaseExpr(val pivot: Expr, val alts: List<Alt>): Expr
 
@@ -70,16 +70,17 @@ data class VarPat(val name: String): Pat
 data class LitPat(val lit: Literal): Pat
 data class TupPat(val fields: List<PatternField>): Pat
 data class ConPat(val con: Qualified, val pats: List<Pat>): Pat
-class AnyPat: Pat
+data class AnyPat(val v: Unit): Pat
 
 data class PatternField(val field: String?, val pat: Pat)
 data class Alt(val pat: Pat, val alias: String?, val body: Expr)
 
 interface Decl
-data class FunDecl(val name: String, val args: List<FunArg>, val ret: Type?, val body: Expr): Decl
+data class FunDecl(val name: String, val args: List<Arg>, val ret: Type?, val body: Expr): Decl
 data class TypeDecl(val type: SimpleType, val target: Type): Decl
 data class DataDecl(val type: SimpleType, val cons: List<Constructor>): Decl
 data class ForeignDecl(val externalName: String, val internalName: String, val type: Type): Decl
 
 data class Constructor(val name: String, val content: Type?)
-data class FunArg(val name: String, val type: Type?)
+data class Arg(val name: String, val type: Type?)
+data class ArgDecl(val name: String?, val type: Type)

@@ -44,7 +44,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
     fun parseFunDecl(): FunDecl {
         expect(Token.Type.kwFn, true)
         val name = parseVarID()
-        val args = parens { sepBy(Token.Type.Comma) { parseFunArg() } }
+        val args = parens { sepBy(Token.Type.Comma) { parseArg(true) } }
         val ret = if(token.type == Token.Type.opArrowR) {
             eat()
             parseType()
@@ -60,11 +60,18 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
     fun parseDataDecl(): DataDecl {
         expect(Token.Type.kwData, true)
         val name = parseSimpleType()
-        expect(Token.Type.opEquals)
+        expect(Token.Type.opEquals, true)
         val cons = sepBy1(Token.Type.opBar) {
             val conName = parseConID()
-            val content = maybeParens { parseType() }
-            Constructor(conName, content)
+            if(token.type == Token.Type.ParenL) {
+                val content = parens { parseType() }
+                Constructor(conName, content)
+            } else if(token.type == Token.Type.BraceL) {
+                val content = parseTupleType()
+                Constructor(conName, content)
+            } else {
+                Constructor(conName, null)
+            }
         }
         return DataDecl(name, cons)
     }
@@ -79,12 +86,12 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
 
     fun parseForeignDecl(): ForeignDecl {
         expect(Token.Type.kwForeign, true)
-        if(token.type == Token.Type.kwFn) eat()
+        val isFun = if(token.type == Token.Type.kwFn) {eat(); true} else false
 
         expect(Token.Type.VarID)
         val id = token.idPayload
         eat()
-        expect(Token.Type.opColon, true)
+        if(!isFun) expect(Token.Type.opColon, true)
         val type = parseType()
         if(token.type == Token.Type.kwAs) {
             eat()
@@ -195,29 +202,25 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             val body = parseExpr()
             return WhileExpr(cond, body)
         } else {
-            return parseFieldExpr()
-        }
-    }
-
-    fun parseFieldExpr(): Expr {
-        val e = parseAppExpr()
-        if(token.type == Token.Type.opDot) {
-            eat()
-            val app = parseSelExpr()
-            return FieldExpr(e, app)
-        } else {
-            return e
+            return parseAppExpr()
         }
     }
 
     fun parseAppExpr(): Expr {
-        val b = parseBaseExpr()
-        if(token.type == Token.Type.ParenL) {
-            val args = parens { sepBy(Token.Type.Comma) { parseTypedExpr() } }
-            return AppExpr(b, args)
-        } else {
-            return b
+        var b = parseBaseExpr()
+        while(true) {
+            if(token.type == Token.Type.ParenL) {
+                val args = parens { sepBy(Token.Type.Comma) { parseTypedExpr() } }
+                b = AppExpr(b, args)
+            } else if(token.type == Token.Type.opDot) {
+                eat()
+                val app = parseSelExpr()
+                b = FieldExpr(b, app)
+            } else {
+                break
+            }
         }
+        return b
     }
 
     fun parseBaseExpr(): Expr {
@@ -235,6 +238,13 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             }
         } else if(token.type == Token.Type.ParenL) {
             eat()
+
+            if(token.type == Token.Type.ParenR) {
+                eat()
+                expect(Token.Type.opArrowD, true)
+                return FunExpr(emptyList(), parseExpr())
+            }
+
             val e = parseTypedExpr()
 
             // Find out if this is a parenthesized or function expression.
@@ -247,17 +257,17 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             }
 
             val firstArg = if(e is VarExpr) {
-                FunArg(e.name, null)
+                Arg(e.name, null)
             } else if(e is CoerceExpr && e.target is VarExpr) {
-                FunArg(e.target.name, e.type)
+                Arg(e.target.name, e.type)
             } else {
                 throw ParseError("Expected ')' or a function argument")
             }
 
-            val args: List<FunArg>
+            val args: List<Arg>
             if(token.type == Token.Type.Comma) {
                 eat()
-                args = sepBy(Token.Type.Comma) { parseFunArg() }
+                args = listOf(firstArg) + sepBy(Token.Type.Comma) { parseArg(false) }
                 expect(Token.Type.ParenR, true)
                 expect(Token.Type.opArrowD, true)
             } else if(token.type == Token.Type.opArrowD) {
@@ -373,6 +383,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
 
     fun parsePat(): Pat {
         if(token.singleMinus) {
+            eat()
             if(token.type == Token.Type.Integer || token.type == Token.Type.Float) {
                 return LitPat(parseLiteral().negate())
             } else {
@@ -380,8 +391,14 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             }
         } else if(token.type == Token.Type.ConID) {
             val name = parseQualified()
-            eat()
-            val list = parens { sepBy1(Token.Type.Comma) { parseLPat() } }
+            val list = if(token.type == Token.Type.ParenL) {
+                parens { sepBy1(Token.Type.Comma) { parseLPat() } }
+            } else if(token.type == Token.Type.BraceL) {
+                listOf(parseLPat())
+            } else {
+                emptyList()
+            }
+
             return ConPat(name, list)
         } else {
             return parseLPat()
@@ -393,7 +410,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             return LitPat(parseLiteral())
         } else if(token.type == Token.Type.kw_ || token.type == Token.Type.kwElse) {
             eat()
-            return AnyPat()
+            return AnyPat(Unit)
         } else if(token.type == Token.Type.VarID) {
             val id = token.idPayload
             eat()
@@ -424,7 +441,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
     }
 
     fun parseType(): Type {
-        val args = maybeParens { sepBy(Token.Type.Comma) { parseType() } }
+        val args = maybeParens { sepBy(Token.Type.Comma) { parseArgDecl() } }
         if(args == null) {
             return parseAType()
         } else {
@@ -478,17 +495,37 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
     fun parseQualified(): Qualified {
         val name = parseConID()
         val qualifier = ArrayList<String>()
+        qualifier.add(name)
         while(token.type == Token.Type.opDot) {
             eat()
             qualifier.add(parseConID())
         }
-        return Qualified(name, qualifier)
+
+        return Qualified(qualifier.last(), qualifier.dropLast(1))
     }
 
-    fun parseFunArg(): FunArg {
+    fun parseArg(requireType: Boolean): Arg {
         val name = parseVarID()
-        expect(Token.Type.opColon, true)
-        return FunArg(name, parseType())
+        if(requireType || token.type == Token.Type.opColon) {
+            expect(Token.Type.opColon, true)
+            return Arg(name, parseType())
+        } else {
+            return Arg(name, null)
+        }
+    }
+
+    fun parseArgDecl(): ArgDecl {
+        if(token.type == Token.Type.VarID) {
+            val name = parseVarID()
+            if(token.type == Token.Type.opColon) {
+                expect(Token.Type.opColon, true)
+                return ArgDecl(name, parseType())
+            } else {
+                return ArgDecl(null, GenType(name))
+            }
+        } else {
+            return ArgDecl(null, parseType())
+        }
     }
 
     fun parseSimpleType(): SimpleType {
