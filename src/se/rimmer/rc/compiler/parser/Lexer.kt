@@ -657,8 +657,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 if(text[c] == 's') { c++; token.type = Token.Type.kwAs }
             }
             'c' -> {
-                if(compare("ase")) token.type = Token.Type.kwCase
-                else if(compare("lass")) token.type = Token.Type.kwClass
+                if(compare("lass")) token.type = Token.Type.kwClass
             }
             'd' -> {
                 if(compare("ata")) token.type = Token.Type.kwData
@@ -688,6 +687,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             }
             'm' -> {
                 if(compare("odule")) token.type = Token.Type.kwModule
+                else if(compare("atch")) token.type = Token.Type.kwMatch
             }
             'n' -> {
                 if(compare("ewtype")) token.type = Token.Type.kwNewType

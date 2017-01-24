@@ -34,7 +34,6 @@ class Token {
 
         /* Keywords */
         kwAs,
-        kwCase,
         kwClass,
         kwData,
         kwDeriving,
@@ -52,6 +51,7 @@ class Token {
         kwInstance,
         kwLet,
         kwModule,
+        kwMatch,
         kwNewType,
         kwOf,
         kwThen,

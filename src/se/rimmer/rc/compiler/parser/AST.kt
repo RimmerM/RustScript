@@ -49,7 +49,7 @@ data class InfixExpr(val op: String, val lhs: Expr, val rhs: Expr): Expr
 data class PrefixExpr(val op: String, val callee: Expr): Expr
 data class IfExpr(val cond: Expr, val then: Expr, val otherwise: Expr?): Expr
 data class MultiIfExpr(val cases: List<IfCase>): Expr
-data class DeclExpr(val name: String, val content: Expr, val mutable: Boolean): Expr
+data class DeclExpr(val name: String, val content: Expr?, val mutable: Boolean): Expr
 data class WhileExpr(val cond: Expr, val content: Expr): Expr
 data class AssignExpr(val target: Expr, val value: Expr): Expr
 data class CoerceExpr(val target: Expr, val type: Type): Expr
@@ -78,7 +78,7 @@ interface Decl
 data class FunDecl(val name: String, val args: List<FunArg>, val ret: Type?, val body: Expr): Decl
 data class TypeDecl(val type: SimpleType, val target: Type): Decl
 data class DataDecl(val type: SimpleType, val cons: List<Con>): Decl
-data class ExternDecl(val externalName: String, val internalName: String, val type: Type): Decl
+data class ForeignDecl(val externalName: String, val internalName: String, val type: Type): Decl
 
 data class Con(val name: String, val content: Type?)
 data class FunArg(val name: String, val type: Type?)
