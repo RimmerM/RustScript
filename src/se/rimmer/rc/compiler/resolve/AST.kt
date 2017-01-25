@@ -70,20 +70,6 @@ data class RecordType(var ast: DataDecl?, val scope: Scope): Type {
 
 data class Constructor(val name: Qualified, val index: Int, val parent: Type, var content: Type? = null)
 
-enum class PrimOp(val sourceName: String, val precedence: Int) {
-    // Binary
-    Add("+", 11), Sub("-", 11), Mul("*", 12), Div("/", 12), Rem("mod", 12),
-    Shl("shl", 10), Shr("shr", 10), And("and", 7), Or("or", 5), Xor("xor", 6),
-    CmpEq("==", 8), CmpNeq("!=", 8), CmpGt(">", 9), CmpGe(">=", 9), CmpLt("<", 9), CmpLe("<=", 9),
-
-    // Unary
-    Neg("-", 0), Not("!", 0)
-}
-
-fun PrimOp.isBinary() = !isUnary()
-fun PrimOp.isUnary() = this === PrimOp.Neg || this === PrimOp.Not
-fun PrimOp.isAndOr() = this === PrimOp.And || this === PrimOp.Or
-
 interface Expr { val type: Type }
 data class LitExpr(val literal: Literal, override val type: Type): Expr
 data class MultiExpr(val list: List<Expr>, override val type: Type): Expr

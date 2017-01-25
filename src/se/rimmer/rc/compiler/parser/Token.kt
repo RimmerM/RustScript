@@ -61,6 +61,7 @@ class Token {
         kwWhile,
         kw_,
         kwFn,
+        kwReturn,
 
         /* Reserved operators */
         opDot,

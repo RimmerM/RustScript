@@ -61,7 +61,7 @@ private fun Resolver.resolveCall(scope: Scope, ast: ASTAppExpr): Expr {
     }
 
     // Create a list of function arguments.
-    
+    val function = scope.findFunction(name) ?: throw ResolveError()
 }
 
 private fun Resolver.resolvePrefix(scope: Scope, ast: ASTPrefixExpr): Expr {
@@ -71,23 +71,35 @@ private fun Resolver.resolvePrefix(scope: Scope, ast: ASTPrefixExpr): Expr {
 private fun Resolver.resolveInfix(scope: Scope, ast: ASTInfixExpr): Expr {
     val e = if(ast.ordered) ast else reorder(scope, ast, 0)
     return resolveBinaryCall(
-        scope, Qualified(ast.op, emptyList()),
-        rv(resolveExpr(scope, ast.lhs, true)),
-        rv(resolveExpr(scope, ast.rhs, true))
+        scope, Qualified(e.op, emptyList()),
+        rv(resolveExpr(scope, e.lhs, true)),
+        rv(resolveExpr(scope, e.rhs, true))
     )
 }
 
-private fun Resolver.resolveUnaryCall(scope: Scope, name: Qualified, arg: Expr): Expr {
-
+private fun testUnaryCall(scope: Scope, name: Qualified, arg: Expr): Expr? {
+    // Check if this can be a primitive operation.
+    // Note that primitive operations can be both functions and operators.
+    if(arg.type is PrimType && name.qualifier.isEmpty()) {
+        primUnaryOps[name.name]?.let {
+            return resolvePrimitiveUnaryOp(it.second, arg)
+        }
+    }
+    return null
 }
 
-private fun Resolver.resolveBinaryCall(scope: Scope, name: Qualified, lhs: Expr, rhs: Expr): Expr {
-
+private fun testBinaryCall(scope: Scope, name: Qualified, lhs: Expr, rhs: Expr): Expr? {
+    // Check if this can be a primitive operation.
+    // Note that primitive operations can be both functions and operators.
+    if(lhs.type is PrimType && rhs.type is PrimType && name.qualifier.isEmpty()) {
+        primBinaryOps[name.name]?.let {
+            return resolvePrimitiveBinaryOp(it.second, lhs, rhs)
+        }
+    }
+    return null
 }
 
-private fun Resolver.rv(e: Expr) = if(e.type is LVType) CoerceLVExpr(e, (e.type as LVType).target) else e
-
-val primOps = PrimOp.values().associate { it.sourceName to Operator(it.precedence, false) }
+private fun rv(e: Expr) = if(e.type is LVType) CoerceLVExpr(e, (e.type as LVType).target) else e
 
 private fun opInfo(scope: Scope, name: Qualified): Operator {
     val op = scope.findOperator(name)
@@ -95,7 +107,7 @@ private fun opInfo(scope: Scope, name: Qualified): Operator {
 
     if(name.qualifier.isEmpty()) {
         val prim = primOps[name.name]
-        if(prim != null) return prim
+        if(prim != null) return prim.first
     }
 
     return Operator(9, false)

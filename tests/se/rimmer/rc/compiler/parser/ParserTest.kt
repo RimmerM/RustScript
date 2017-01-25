@@ -70,7 +70,8 @@ val leftExprTests = arrayOf(
     "if x then y" to IfExpr(VarExpr("x"), VarExpr("y"), null),
     "if | x == y => z\n   | x == z => y" to MultiIfExpr(listOf(IfCase(InfixExpr("==", VarExpr("x"), VarExpr("y")), VarExpr("z")), IfCase(InfixExpr("==", VarExpr("x"), VarExpr("z")), VarExpr("y")))),
     "while x => print(\"hello\")" to WhileExpr(VarExpr("x"), AppExpr(VarExpr("print"), listOf(LitExpr(StringLiteral("hello"))))),
-    "match x =>\n   Vector => \"hello\"\n   _ => \"world\"" to CaseExpr(VarExpr("x"), listOf(Alt(ConPat(q("Vector"), emptyList()), null, LitExpr(StringLiteral("hello"))), Alt(AnyPat(Unit), null, LitExpr(StringLiteral("world")))))
+    "match x =>\n   Vector => \"hello\"\n   _ => \"world\"" to CaseExpr(VarExpr("x"), listOf(Alt(ConPat(q("Vector"), emptyList()), null, LitExpr(StringLiteral("hello"))), Alt(AnyPat(Unit), null, LitExpr(StringLiteral("world"))))),
+    "return x" to ReturnExpr(VarExpr("x"))
 )
 
 val prefixExprTests = arrayOf(

@@ -712,6 +712,9 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             'p' -> {
                 if(compare("refix")) token.type = Token.Type.kwPrefix
             }
+            'r' -> {
+                if(compare("eturn")) token.type = Token.Type.kwReturn
+            }
             't' -> {
                 if(compare("hen")) token.type = Token.Type.kwThen
                 else if(compare("ype")) token.type = Token.Type.kwType

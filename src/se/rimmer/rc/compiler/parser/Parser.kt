@@ -201,6 +201,10 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             expect(Token.Type.opArrowD, true)
             val body = parseExpr()
             return WhileExpr(cond, body)
+        } else if(token.type == Token.Type.kwReturn) {
+            eat()
+            val body = parseTypedExpr()
+            return ReturnExpr(body)
         } else {
             return parseAppExpr()
         }

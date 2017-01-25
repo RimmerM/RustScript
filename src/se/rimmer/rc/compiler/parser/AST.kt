@@ -63,6 +63,7 @@ data class TupExpr(val args: List<TupArg>): Expr
 data class FunExpr(val args: List<Arg>, val body: Expr): Expr
 data class FormatExpr(val chunks: List<FormatChunk>): Expr
 data class CaseExpr(val pivot: Expr, val alts: List<Alt>): Expr
+data class ReturnExpr(val expr: Expr): Expr
 
 data class IfCase(val cond: Expr, val then: Expr)
 data class FormatChunk(val text: String, val format: Expr?)
@@ -82,6 +83,7 @@ interface Decl
 data class FunDecl(val name: String, val args: List<Arg>, val ret: Type?, val body: Expr): Decl
 data class TypeDecl(val type: SimpleType, val target: Type): Decl
 data class DataDecl(val type: SimpleType, val cons: List<Constructor>): Decl
+data class ClassDecl(val type: SimpleType, val decls: List<Decl>): Decl
 data class ForeignDecl(val externalName: String, val internalName: String, val type: Type): Decl
 
 data class Constructor(val name: String, val content: Type?)
