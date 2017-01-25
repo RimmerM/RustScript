@@ -16,6 +16,7 @@ enum class FixityKind { Left, Right, Prefix }
 data class Fixity(val kind: FixityKind, val precedence: Int)
 
 data class Qualified(val name: String, val qualifier: List<String>)
+fun Qualified.extend(name: String) = Qualified(name, qualifier + name)
 
 interface Literal
 data class RationalLiteral(val v: BigDecimal): Literal
@@ -36,6 +37,8 @@ data class AppType(val base: Type, val apps: List<Type>): Type
 data class ConType(val name: Qualified): Type
 data class GenType(val name: String): Type
 data class FunType(val args: List<ArgDecl>, val ret: Type): Type
+data class ArrayType(val type: Type): Type
+data class MapType(val from: Type, val to: Type): Type
 
 data class SimpleType(val name: String, val kind: List<String>)
 data class TupField(val type: Type, val name: String?)
@@ -46,7 +49,7 @@ data class NestedExpr(val expr: Expr): Expr
 data class MultiExpr(val list: List<Expr>): Expr
 data class VarExpr(val name: String): Expr
 data class AppExpr(val callee: Expr, val args: List<Expr>): Expr
-data class InfixExpr(val op: String, val lhs: Expr, val rhs: Expr): Expr
+data class InfixExpr(val op: String, var lhs: Expr, var rhs: Expr): Expr {var ordered = false}
 data class PrefixExpr(val op: String, val callee: Expr): Expr
 data class IfExpr(val cond: Expr, val then: Expr, val otherwise: Expr?): Expr
 data class MultiIfExpr(val cases: List<IfCase>): Expr

@@ -467,6 +467,16 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             return parens { parseType() }
         } else if(token.type == Token.Type.BraceL) {
             return parseTupleType()
+        } else if(token.type == Token.Type.BracketL) {
+            eat()
+            val from = parseType()
+            if(token.type == Token.Type.opArrowD) {
+                eat()
+                val to = parseType()
+                return MapType(from, to)
+            } else {
+                return ArrayType(from)
+            }
         } else {
             throw ParseError("Expected a type")
         }

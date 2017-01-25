@@ -109,7 +109,9 @@ val typeTests = arrayOf(
     "List(Int)" to AppType(ConType(q("List")), listOf(ConType(q("Int")))),
     "a" to GenType("a"),
     "{Int, Int}" to TupType(listOf(TupField(ConType(q("Int")), null), TupField(ConType(q("Int")), null))),
-    "{x: Int, y: Int}" to TupType(listOf(TupField(ConType(q("Int")), "x"), TupField(ConType(q("Int")), "y")))
+    "{x: Int, y: Int}" to TupType(listOf(TupField(ConType(q("Int")), "x"), TupField(ConType(q("Int")), "y"))),
+    "[Int]" to ArrayType(ConType(q("Int"))),
+    "[Int => Float]" to MapType(ConType(q("Int")), ConType(q("Float")))
 )
 
 val declTests = arrayOf(
