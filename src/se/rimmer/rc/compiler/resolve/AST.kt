@@ -16,16 +16,21 @@ data class Scope(val name: Qualified, val parent: Scope?, val function: Function
     val types = HashMap<String, Type>()
     val constructors = HashMap<String, Constructor>()
     val ops = HashMap<String, Operator>()
+
+    var codegen: Any? = null
 }
 
 data class ImportedScope(val scope: Scope, val qualified: Boolean, val qualifier: List<String>)
 
 data class Operator(val precedence: Int, val isRight: Boolean)
 
-data class Var(val name: String, val type: Type, val scope: Scope, val isConstant: Boolean, val isArg: Boolean)
+data class Var(val name: String, val type: Type, val scope: Scope, val isConstant: Boolean, val isArg: Boolean) {
+    var codegen: Any? = null
+}
+
 val Var.isVar: Boolean get() = !isConstant && !isArg
 
-data class FunctionHead(val name: String?) {
+class FunctionHead {
     val args = ArrayList<Var>()
     var ret: Type? = null
     var body: Function? = null
@@ -37,6 +42,8 @@ class LocalFunction(name: Qualified, scope: Scope, val head: FunctionHead): Func
     val scope = Scope(name, scope, null)
     var content: Expr? = null
     var generic = false
+
+    var codegen: Any? = null
 }
 
 class ForeignFunction(val externalName: String, val head: FunctionHead): Function

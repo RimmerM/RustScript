@@ -13,7 +13,7 @@ import se.rimmer.rc.compiler.parser.InfixExpr as ASTInfixExpr
 fun Resolver.resolveExpr(scope: Scope, ast: ASTExpr, resultUsed: Boolean): Expr {
     return when(ast) {
         is ASTMultiExpr -> resolveMulti(scope, ast, resultUsed)
-        is ASTLitExpr -> resolveLit(scope, ast)
+        is ASTLitExpr -> resolveLit(ast)
         is ASTAppExpr -> resolveCall(scope, ast)
         is ASTPrefixExpr -> resolveUnaryCall(scope, Qualified(ast.op, emptyList()), resol)
         else -> throw NotImplementedError()
@@ -28,7 +28,7 @@ private fun Resolver.resolveMulti(scope: Scope, ast: ASTMultiExpr, resultUsed: B
     return MultiExpr(list, list.last().type)
 }
 
-private fun Resolver.resolveLit(scope: Scope, ast: ASTLitExpr): Expr {
+private fun resolveLit(ast: ASTLitExpr): Expr {
     val type = when(ast.literal) {
         is IntLiteral -> primitiveTypes[Primitive.Int.ordinal]
         is RationalLiteral -> primitiveTypes[Primitive.Double.ordinal]
@@ -47,6 +47,8 @@ private fun Resolver.resolveCall(scope: Scope, ast: ASTAppExpr): Expr {
     if(ast.callee is ASTFieldExpr) {
 
     }
+
+
 
     // Special case for calls with one or two parameters - these can map to builtin operations.
     if(ast.callee is ASTVarExpr) {
