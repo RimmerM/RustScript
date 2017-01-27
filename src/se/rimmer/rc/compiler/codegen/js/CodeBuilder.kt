@@ -40,8 +40,8 @@ class CodeBuilder(val w: Writer, val minify: Boolean) {
         append(')')
     }
 
-    inline fun doIf(cond: CodeBuilder.() -> Unit, f: CodeBuilder.() -> Unit) = ifBlock("if", cond, f)
-    inline fun doElseif(cond: CodeBuilder.() -> Unit, f: CodeBuilder.() -> Unit) = ifBlock("else if", cond, f)
+    inline fun doIf(cond: String, f: CodeBuilder.() -> Unit) = ifBlock("if", cond, f)
+    inline fun doElseif(cond: String, f: CodeBuilder.() -> Unit) = ifBlock("else if", cond, f)
 
     inline fun doElse(f: CodeBuilder.() -> Unit) {
         append(elseHead)
@@ -49,11 +49,11 @@ class CodeBuilder(val w: Writer, val minify: Boolean) {
         line('}')
     }
 
-    inline fun ifBlock(name: String, cond: CodeBuilder.() -> Unit, f: CodeBuilder.() -> Unit) {
+    inline fun ifBlock(name: String, cond: String, f: CodeBuilder.() -> Unit) {
         startLine()
         append(name)
         append('(')
-        cond()
+        append(cond)
         append(parenBlockStart)
         withLevel(f)
         line('}')

@@ -46,7 +46,7 @@ class LocalFunction(name: Qualified, scope: Scope, val head: FunctionHead): Func
     var codegen: Any? = null
 }
 
-class ForeignFunction(val externalName: String, val head: FunctionHead): Function
+class ForeignFunction(val name: Qualified, val externalName: String, val head: FunctionHead): Function
 class VarFunction(val variable: Var, val head: FunctionHead): Function
 
 interface Type
@@ -71,22 +71,37 @@ data class PrimType(val prim: Primitive): Type
 
 class Field(val name: String?, val index: Int, val type: Type, val container: Type, val content: Expr?, val constant: Boolean)
 
+enum class RecordKind { Enum, Single, Multi }
+
 data class RecordType(var ast: DataDecl?, val scope: Scope): Type {
+    var kind = RecordKind.Multi
     val constructors = ArrayList<Constructor>()
 }
 
-data class Constructor(val name: Qualified, val index: Int, val parent: Type, var content: Type? = null)
+data class Constructor(val name: Qualified, val index: Int, val parent: RecordType, var content: Type? = null)
 
-interface Expr { val type: Type }
-data class LitExpr(val literal: Literal, override val type: Type): Expr
-data class MultiExpr(val list: List<Expr>, override val type: Type): Expr
-data class VarExpr(val variable: Var, override val type: Type): Expr
-data class AppExpr(val callee: FunctionHead, val args: List<Expr>): Expr {override val type: Type get() = callee.ret!!}
-data class PrimOpExpr(val op: PrimOp, val args: List<Expr>, override val type: Type): Expr
-data class LoadExpr(val target: Expr, override val type: Type): Expr
-data class StoreExpr(val target: Expr, val value: Expr): Expr {override val type: Type get() = unitType}
-data class AssignExpr(val target: Var, val value: Expr): Expr {override val type: Type get() = unitType}
-data class CoerceExpr(val source: Expr, override val type: Type): Expr
-data class CoerceLVExpr(val source: Expr, override val type: Type): Expr
-data class FieldExpr(val container: Expr, val field: Field, override val type: Type): Expr
-data class RetExpr(val value: Expr): Expr {override val type: Type get() = unitType}
+data class IfCond(val scope: Expr?, val cond: Expr?)
+
+enum class CondMode { And, Or }
+
+interface ExprKind
+data class LitExpr(val literal: Literal): ExprKind
+data class MultiExpr(val list: List<Expr>): ExprKind
+data class VarExpr(val variable: Var): ExprKind
+data class AppExpr(val callee: FunctionHead, val args: List<Expr>): ExprKind
+data class PrimOpExpr(val op: PrimOp, val args: List<Expr>): ExprKind
+data class ConstructExpr(val constructor: Constructor, val args: List<Expr>): ExprKind
+data class AssignExpr(val target: Var, val value: Expr): ExprKind
+data class CoerceExpr(val source: Expr): ExprKind
+data class CoerceLVExpr(val source: Expr): ExprKind
+data class FieldExpr(val container: Expr, val field: Field): ExprKind
+data class RetExpr(val value: Expr): ExprKind
+data class IfExpr(val conds: List<IfCond>, val then: Expr, val otherwise: Expr?, val mode: CondMode, var alwaysTrue: Boolean): ExprKind
+data class WhileExpr(val cond: Expr, val loop: Expr): ExprKind
+
+/**
+ * Contains an expression and its metadata.
+ * @param used Set when the result of this expression is used by another expression.
+ */
+class ExprNode<out T: ExprKind>(val kind: T, val type: Type, val used: Boolean)
+typealias Expr = ExprNode<ExprKind>

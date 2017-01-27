@@ -2,12 +2,17 @@ package se.rimmer.rc.compiler.codegen.js
 
 import se.rimmer.rc.compiler.parser.*
 import se.rimmer.rc.compiler.resolve.*
-import se.rimmer.rc.compiler.resolve.AppExpr
 import se.rimmer.rc.compiler.resolve.Expr
+import se.rimmer.rc.compiler.resolve.AppExpr
+import se.rimmer.rc.compiler.resolve.AssignExpr
+import se.rimmer.rc.compiler.resolve.CoerceExpr
+import se.rimmer.rc.compiler.resolve.ConstructExpr
 import se.rimmer.rc.compiler.resolve.FieldExpr
+import se.rimmer.rc.compiler.resolve.IfExpr
 import se.rimmer.rc.compiler.resolve.LitExpr
 import se.rimmer.rc.compiler.resolve.MultiExpr
 import se.rimmer.rc.compiler.resolve.VarExpr
+import se.rimmer.rc.compiler.resolve.WhileExpr
 import java.io.Writer
 
 enum class ImportMode {
@@ -20,7 +25,7 @@ enum class ObjectMode {
 
 class GenOptions(val minify: Boolean, val importMode: ImportMode, val objectMode: ObjectMode, val comments: Boolean)
 
-class VarGen(val mangledName: String, var used: Boolean)
+class VarGen(val mangledName: String, var defined: Boolean)
 
 class ScopeGen {
     val namer = StringBuilder("a")
@@ -50,10 +55,10 @@ class Generator(writer: Writer, val options: GenOptions) {
     }
 
     private fun genScope(scope: Scope) {
-        scope.imports.forEach { list, import -> genModule(import.scope) }
+        scope.imports.forEach { _, import -> genModule(import.scope) }
         scope.children.forEach { genModule(it) }
 
-        scope.functions.forEach { s, f ->
+        scope.functions.forEach { _, f ->
             val body = f.body
             when(body) {
                 is LocalFunction -> {
@@ -64,7 +69,7 @@ class Generator(writer: Writer, val options: GenOptions) {
                         // Define any variables that are used.
                         // Normally variables are defined lazily,
                         // but in the case of local functions they have to be defined in the preceding scope.
-                        if(it.scope === scope) defineVar(it)
+                        if(it.scope === scope) defineVar(it, null)
                     }
                     prepareFun(body)
                     genFun(body)
@@ -87,25 +92,42 @@ class Generator(writer: Writer, val options: GenOptions) {
         }
     }
 
-    private fun genExpr(expr: Expr, scope: Scope) = when(expr) {
-        is MultiExpr -> genMulti(expr, scope)
-        is PrimOpExpr -> genPrimOp(expr, scope)
-        is LitExpr -> genLit(expr.literal)
-        is VarExpr -> genVar(expr.variable)
-        is AppExpr -> genApp(expr, scope)
-        is RetExpr -> genRet(expr, scope)
-        is FieldExpr -> genField(expr, scope)
+    private fun genExpr(expr: Expr, scope: Scope) = when(expr.kind) {
+        is MultiExpr -> genMulti(expr, expr.kind, scope)
+        is PrimOpExpr -> genPrimOp(expr.kind, scope)
+        is LitExpr -> if(expr.used) genLit(expr.kind.literal) else ""
+        is VarExpr -> if(expr.used) genVar(expr.kind.variable) else ""
+        is AppExpr -> genApp(expr.kind, scope)
+        is RetExpr -> genRet(expr.kind, scope)
+        is FieldExpr -> if(expr.used) genField(expr.kind, scope) else ""
+        is ConstructExpr -> if(expr.used) genConstruct(expr.kind, scope) else ""
+        is AssignExpr -> genAssign(expr.kind, scope)
+        is CoerceExpr -> genCoerce(expr.kind, scope)
+        is IfExpr -> genIf(expr, expr.kind, scope)
+        is WhileExpr -> genWhile(expr.kind, scope)
         else -> throw NotImplementedError()
     }
 
-    private fun genMulti(expr: MultiExpr, scope: Scope): String {
-        expr.list.forEach {
-            b.startLine()
-            b.append(genExpr(it, scope))
-            b.append(';')
-            b.newLine()
+    private fun genMulti(node: Expr, expr: MultiExpr, scope: Scope): String {
+        if(node.used) {
+            var last = ""
+            iterateLast(expr.list, {
+                b.startLine()
+                b.append(genExpr(it, scope))
+                b.newLine()
+            }, {
+                last = genExpr(it, scope)
+            })
+            return last
+        } else {
+            expr.list.forEach {
+                b.startLine()
+                b.append(genExpr(it, scope))
+                b.append(';')
+                b.newLine()
+            }
+            return ""
         }
-        return ""
     }
 
     private fun genField(expr: FieldExpr, scope: Scope): String {
@@ -117,6 +139,21 @@ class Generator(writer: Writer, val options: GenOptions) {
 
         // Returns are always used as statements.
         return ""
+    }
+
+    private fun genConstruct(expr: ConstructExpr, scope: Scope): String {
+        when(expr.constructor.parent.kind) {
+            RecordKind.Enum -> return expr.constructor.index.toString()
+            RecordKind.Single -> {
+                val args = expr.args.map { genExpr(it, scope) }
+                return args.joinToString(b.comma, "[", "]")
+            }
+            RecordKind.Multi -> {
+                val args = listOf(expr.constructor.index.toString()) + expr.args.map { genExpr(it, scope) }
+                return args.joinToString(b.comma, "[", "]")
+            }
+            else -> throw NotImplementedError()
+        }
     }
 
     private fun genApp(expr: AppExpr, scope: Scope): String {
@@ -144,17 +181,65 @@ class Generator(writer: Writer, val options: GenOptions) {
             is JsBinaryOp -> {
                 val lhs = genExpr(expr.args[0], scope)
                 val rhs = genExpr(expr.args[1], scope)
-                return "$lhs${b.space}${op.op}${b.space}$rhs"
+                return "($lhs${b.space}${op.op}${b.space}$rhs)"
             }
             is JsUnaryOp -> {
                 val arg = genExpr(expr.args[0], scope)
-                return "${op.op}$arg"
+                return "(${op.op}$arg)"
             }
             is JsFunOp -> {
                 genCall(op.name, expr.args, scope)
             }
             else -> throw NotImplementedError()
         }
+    }
+
+    private fun genWhile(expr: WhileExpr, scope: Scope): String {
+        b.line("while(true) {")
+        b.withLevel {
+            val cond = genExpr(expr.cond, scope)
+            line("if(!$cond) break;")
+
+            val body = genExpr(expr.loop, scope)
+            line(body)
+            append(';')
+        }
+        b.line("}")
+        return ""
+    }
+
+    private fun genIf(node: Expr, expr: IfExpr, scope: Scope): String {
+        if(expr.alwaysTrue) {
+            val body = genExpr(expr.then, scope)
+            if(node.used) {
+                return body
+            } else {
+                b.line(body)
+                return ""
+            }
+        }
+
+        val result = if(node.used) localVar(scope) else null
+
+        expr.conds.forEach {
+            it.scope?.let { genExpr(it, scope) }
+        }
+
+        val conds = expr.conds.filter { it.cond != null }.map { genExpr(it.cond!!, scope) }
+        val op = when(expr.mode) {
+            CondMode.Or -> " || "
+            CondMode.And -> " && "
+        }
+
+        b.doIf(conds.joinToString(op)) {
+            genExpr(expr.then, scope)
+        }
+
+        if(expr.otherwise != null) {
+            b.doElse { genExpr(expr.otherwise, scope) }
+        }
+
+        return result ?: ""
     }
 
     private fun prepareVar(it: Var) {
@@ -165,6 +250,21 @@ class Generator(writer: Writer, val options: GenOptions) {
 
     private fun genVar(v: Var): String {
         return v.gen.mangledName
+    }
+
+    private fun genAssign(expr: AssignExpr, scope: Scope): String {
+        val v = genExpr(expr.value, scope)
+        if(expr.target.gen.defined) {
+            b.line("${expr.target.gen.mangledName} = $v;")
+        } else {
+            defineVar(expr.target, v)
+        }
+        return ""
+    }
+
+    private fun genCoerce(expr: CoerceExpr, scope: Scope): String {
+        // Implicit conversion - JS doesn't have types.
+        return genExpr(expr.source, scope)
     }
 
     private fun genLit(literal: Literal) = when(literal) {
@@ -196,8 +296,19 @@ class Generator(writer: Writer, val options: GenOptions) {
         return b.toString()
     }
 
-    private fun defineVar(it: Var) {
-        b.line("var ${it.gen.mangledName};")
+    private fun localVar(scope: Scope): String {
+        val name = localName(null, scope)
+        b.line("var $name;")
+        return name
+    }
+
+    private fun defineVar(it: Var, content: String?) {
+        if(content == null) {
+            b.line("var ${it.gen.mangledName};")
+        } else {
+            b.line("var ${it.gen.mangledName} = $content;")
+        }
+        it.gen.defined = true
     }
 
     private fun globalName(name: String, scope: Scope): String {
@@ -226,7 +337,13 @@ class Generator(writer: Writer, val options: GenOptions) {
         } else {
             n.increment()
         }
-        return n.toString()
+
+        val v = n.toString()
+        return if(scope.variables.find { it.gen.mangledName == v } != null) {
+            localName(name, scope)
+        } else {
+            n.toString()
+        }
     }
 }
 
