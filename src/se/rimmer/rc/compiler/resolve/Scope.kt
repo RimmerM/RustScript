@@ -21,7 +21,7 @@ private fun <T> findHelper(scope: Scope, map: Scope.() -> Map<String, T>, name: 
     // Imports have equal weight, so multiple hits here is an error.
     if(followImports) {
         val candidates = ArrayList<T>()
-        scope.imports.forEach { list, scope ->
+        scope.imports.forEach { _, scope ->
             val v = if(name.qualifier == scope.qualifier) {
                 findHelper(scope.scope, map, Qualified(name.name, emptyList()), false)
             } else {

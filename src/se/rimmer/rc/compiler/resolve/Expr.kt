@@ -13,7 +13,7 @@ import se.rimmer.rc.compiler.parser.InfixExpr as ASTInfixExpr
 fun Resolver.resolveExpr(scope: Scope, ast: ASTExpr, resultUsed: Boolean): Expr {
     return when(ast) {
         is ASTMultiExpr -> resolveMulti(scope, ast, resultUsed)
-        is ASTLitExpr -> resolveLit(ast)
+        is ASTLitExpr -> resolveLit(ast, resultUsed)
         is ASTAppExpr -> resolveCall(scope, ast)
         is ASTPrefixExpr -> resolveUnaryCall(scope, Qualified(ast.op, emptyList()), resol)
         else -> throw NotImplementedError()
@@ -25,10 +25,10 @@ private fun Resolver.resolveMulti(scope: Scope, ast: ASTMultiExpr, resultUsed: B
     val list = ast.list.mapIndexed { i, expr ->
         resolveExpr(scope, expr, if(i == ast.list.size - 1) resultUsed else false)
     }
-    return MultiExpr(list, list.last().type)
+    return ExprNode(MultiExpr(list), list.last().type, resultUsed)
 }
 
-private fun resolveLit(ast: ASTLitExpr): Expr {
+private fun resolveLit(ast: ASTLitExpr, resultUsed: Boolean): Expr {
     val type = when(ast.literal) {
         is IntLiteral -> primitiveTypes[Primitive.Int.ordinal]
         is RationalLiteral -> primitiveTypes[Primitive.Double.ordinal]
@@ -37,18 +37,16 @@ private fun resolveLit(ast: ASTLitExpr): Expr {
         is CharLiteral -> primitiveTypes[Primitive.Int.ordinal]
         else -> throw NotImplementedError()
     }
-    return LitExpr(ast.literal, type)
+    return ExprNode(LitExpr(ast.literal), type, resultUsed)
 }
 
-private fun Resolver.resolveCall(scope: Scope, ast: ASTAppExpr): Expr {
+private fun Resolver.resolveCall(scope: Scope, ast: ASTAppExpr, resultUsed: Boolean): Expr {
     // If the operand is a field expression we need special handling, since there are several options:
     // - the field operand is an actual field of its target and has a function type, which we call.
     // - the field operand is not a field, and we produce a function call with the target as first parameter.
     if(ast.callee is ASTFieldExpr) {
 
     }
-
-
 
     // Special case for calls with one or two parameters - these can map to builtin operations.
     if(ast.callee is ASTVarExpr) {
@@ -101,7 +99,7 @@ private fun testBinaryCall(scope: Scope, name: Qualified, lhs: Expr, rhs: Expr):
     return null
 }
 
-private fun rv(e: Expr) = if(e.type is LVType) CoerceLVExpr(e, (e.type as LVType).target) else e
+private fun rv(e: Expr) = if(e.type is LVType) ExprNode(CoerceLVExpr(e), e.type.target, true) else e
 
 private fun opInfo(scope: Scope, name: Qualified): Operator {
     val op = scope.findOperator(name)

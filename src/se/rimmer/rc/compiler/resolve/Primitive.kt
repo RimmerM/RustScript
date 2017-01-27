@@ -18,11 +18,11 @@ val primOps = PrimOp.values().associate { it.sourceName to (Operator(it.preceden
 val primUnaryOps = primOps.filterValues { it.second.args == 1 }
 val primBinaryOps = primOps.filterValues { it.second.args == 2 }
 
-fun resolvePrimitiveUnaryOp(op: PrimOp, arg: Expr) =
-    PrimOpExpr(op, listOf(arg), unaryOpType(op, arg.type))
+fun resolvePrimitiveUnaryOp(op: PrimOp, arg: Expr, used: Boolean) =
+    ExprNode(PrimOpExpr(op, listOf(arg)), unaryOpType(op, arg.type), used)
 
-fun resolvePrimitiveBinaryOp(op: PrimOp, lhs: Expr, rhs: Expr) =
-    PrimOpExpr(op, listOf(lhs, rhs), binaryOpType(op, lhs.type, rhs.type))
+fun resolvePrimitiveBinaryOp(op: PrimOp, lhs: Expr, rhs: Expr, used: Boolean) =
+    ExprNode(PrimOpExpr(op, listOf(lhs, rhs)), binaryOpType(op, lhs.type, rhs.type), used)
 
 fun unaryOpType(op: PrimOp, type: Type) = when(op) {
     PrimOp.Neg -> {

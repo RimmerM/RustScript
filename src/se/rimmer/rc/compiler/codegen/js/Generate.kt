@@ -95,12 +95,12 @@ class Generator(writer: Writer, val options: GenOptions) {
     private fun genExpr(expr: Expr, scope: Scope) = when(expr.kind) {
         is MultiExpr -> genMulti(expr, expr.kind, scope)
         is PrimOpExpr -> genPrimOp(expr.kind, scope)
-        is LitExpr -> if(expr.used) genLit(expr.kind.literal) else ""
-        is VarExpr -> if(expr.used) genVar(expr.kind.variable) else ""
+        is LitExpr -> genLit(expr.kind.literal)
+        is VarExpr -> genVar(expr.kind.variable)
         is AppExpr -> genApp(expr.kind, scope)
         is RetExpr -> genRet(expr.kind, scope)
-        is FieldExpr -> if(expr.used) genField(expr.kind, scope) else ""
-        is ConstructExpr -> if(expr.used) genConstruct(expr.kind, scope) else ""
+        is FieldExpr -> genField(expr.kind, scope)
+        is ConstructExpr -> genConstruct(expr.kind, scope)
         is AssignExpr -> genAssign(expr.kind, scope)
         is CoerceExpr -> genCoerce(expr.kind, scope)
         is IfExpr -> genIf(expr, expr.kind, scope)

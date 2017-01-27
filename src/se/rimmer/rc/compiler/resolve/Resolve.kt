@@ -1,10 +1,10 @@
 package se.rimmer.rc.compiler.resolve
 
 import se.rimmer.rc.compiler.parser.*
-import se.rimmer.rc.compiler.parser.Module as ASTModule
-import se.rimmer.rc.compiler.parser.Type as ASTType
 import se.rimmer.rc.compiler.parser.GenType as ASTGenType
+import se.rimmer.rc.compiler.parser.Module as ASTModule
 import se.rimmer.rc.compiler.parser.TupType as ASTTupType
+import se.rimmer.rc.compiler.parser.Type as ASTType
 
 class ResolveError(text: String): Exception(text)
 
@@ -27,15 +27,15 @@ class Resolver(val ast: ASTModule) {
                         throw ResolveError("redefinition of function ${it.name}")
                     }
 
-                    val head = FunctionHead(it.name)
+                    val head = FunctionHead()
                     val function = LocalFunction(module.name.extend(it.name), module, head)
                     head.body = function
                     module.functions[it.name] = head
                 }
                 is ForeignDecl -> {
                     if(it.type is FunType) {
-                        val head = FunctionHead(it.internalName)
-                        val function = ForeignFunction(it.externalName, head)
+                        val head = FunctionHead()
+                        val function = ForeignFunction(module.name.extend(it.internalName), it.externalName, head)
                         head.body = function
                         module.functions[it.internalName] = head
                     } else {
