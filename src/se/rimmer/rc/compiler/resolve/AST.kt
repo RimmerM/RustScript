@@ -8,19 +8,25 @@ import java.util.*
 
 data class Scope(val name: Qualified, val parent: Scope?, val function: Function?) {
     val imports = HashMap<List<String>, ImportedScope>()
-    val children = ArrayList<Scope>()
-    val variables = ArrayList<Var>()
-    val shadows = ArrayList<Var>()
-    val captures = ArrayList<Var>()
+    val children = HashMap<String, Scope>()
+    val shadows = HashMap<String, Var>()
+    val captures = HashMap<String, Var>()
     val functions = HashMap<String, FunctionHead>()
     val types = HashMap<String, Type>()
     val constructors = HashMap<String, Constructor>()
     val ops = HashMap<String, Operator>()
 
+    // The variables that have been defined to the current resolving point.
+    // Used for lookups to make sure that variables are initialized before use.
+    val definedVariables = HashMap<String, Var>()
+
+    // The symbols defined in this module that are visible externally.
+    val exportedSymbols = HashSet<String>()
+
     var codegen: Any? = null
 }
 
-data class ImportedScope(val scope: Scope, val qualified: Boolean, val qualifier: List<String>)
+data class ImportedScope(val scope: Scope, val qualified: Boolean, val qualifier: List<String>, val localSymbols: Set<String>)
 
 data class Operator(val precedence: Int, val isRight: Boolean)
 
@@ -38,8 +44,8 @@ class FunctionHead {
 
 interface Function
 
-class LocalFunction(name: Qualified, scope: Scope, val head: FunctionHead): Function {
-    val scope = Scope(name, scope, null)
+class LocalFunction(name: Qualified, parentScope: Scope, val head: FunctionHead): Function {
+    val scope = Scope(name, parentScope, null)
     var content: Expr? = null
     var generic = false
 

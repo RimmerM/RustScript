@@ -24,13 +24,22 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
 
     fun parseImport(): Import {
         expect(Token.Type.kwImport, true)
+        val qualified = if(token.type == Token.Type.VarID && token.idPayload == "qualified") { eat(); true } else false
         val name = parseQualified()
+
+        val include = maybeParens { sepBy1(Token.Type.Comma) { parseID() } } ?: emptyList()
+
+        val exclude = if(token.type == Token.Type.VarID && token.idPayload == "hiding") {
+            eat()
+            parens { sepBy1(Token.Type.Comma) { parseID() } }
+        } else emptyList()
+
         val asName = if(token.type == Token.Type.kwAs) {
             eat()
             parseConID()
-        } else name.name
+        } else null
 
-        return Import(name, asName)
+        return Import(name, qualified || asName != null, asName ?: name.name, include, exclude)
     }
 
     fun parseDecl() = when(token.type) {
@@ -93,15 +102,24 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
         eat()
         if(!isFun) expect(Token.Type.opColon, true)
         val type = parseType()
-        if(token.type == Token.Type.kwAs) {
+
+        val from = if(token.type == Token.Type.VarID && token.idPayload == "from") {
+            eat()
+            expect(Token.Type.String)
+            val from = token.idPayload
+            eat()
+            from
+        } else null
+
+        val internalName = if(token.type == Token.Type.kwAs) {
             eat()
             expect(Token.Type.VarID)
             val asName = token.idPayload
             eat()
-            return ForeignDecl(id, asName, type)
-        } else {
-            return ForeignDecl(id, id, type)
-        }
+            asName
+        } else id
+
+        return ForeignDecl(id, internalName, from, type)
     }
 
     fun parseExpr(): Expr {

@@ -10,12 +10,21 @@ class Module(val name: Qualified) {
     val ops = HashMap<String, Fixity>()
 }
 
-data class Import(val source: Qualified, val localName: String)
+data class Import(
+    val source: Qualified,
+    val qualified: Boolean,
+    val localName: String,
+    val include: List<String>,
+    val exclude: List<String>
+)
 
 enum class FixityKind { Left, Right, Prefix }
 data class Fixity(val kind: FixityKind, val precedence: Int)
 
-data class Qualified(val name: String, val qualifier: List<String>)
+data class Qualified(val name: String, val qualifier: List<String>) {
+    override fun toString() = qualifier.joinToString(".") + '.' + name
+}
+
 fun Qualified.extend(name: String) = Qualified(name, qualifier + name)
 
 interface Literal
@@ -84,7 +93,7 @@ data class FunDecl(val name: String, val args: List<Arg>, val ret: Type?, val bo
 data class TypeDecl(val type: SimpleType, val target: Type): Decl
 data class DataDecl(val type: SimpleType, val cons: List<Constructor>): Decl
 data class ClassDecl(val type: SimpleType, val decls: List<Decl>): Decl
-data class ForeignDecl(val externalName: String, val internalName: String, val type: Type): Decl
+data class ForeignDecl(val externalName: String, val internalName: String, val from: String?, val type: Type): Decl
 
 data class Constructor(val name: String, val content: Type?)
 data class Arg(val name: String, val type: Type?)
