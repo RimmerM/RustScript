@@ -10,17 +10,17 @@ import se.rimmer.rc.compiler.parser.VarExpr as ASTVarExpr
 import se.rimmer.rc.compiler.parser.PrefixExpr as ASTPrefixExpr
 import se.rimmer.rc.compiler.parser.InfixExpr as ASTInfixExpr
 
-fun Resolver.resolveExpr(scope: Scope, ast: ASTExpr, resultUsed: Boolean): Expr {
+fun resolveExpr(scope: Scope, ast: ASTExpr, resultUsed: Boolean): Expr {
     return when(ast) {
         is ASTMultiExpr -> resolveMulti(scope, ast, resultUsed)
         is ASTLitExpr -> resolveLit(ast, resultUsed)
-        is ASTAppExpr -> resolveCall(scope, ast)
+        is ASTAppExpr -> resolveCall(scope, ast, resultUsed)
         is ASTPrefixExpr -> resolveUnaryCall(scope, Qualified(ast.op, emptyList()), resol)
         else -> throw NotImplementedError()
     }
 }
 
-private fun Resolver.resolveMulti(scope: Scope, ast: ASTMultiExpr, resultUsed: Boolean): Expr {
+private fun resolveMulti(scope: Scope, ast: ASTMultiExpr, resultUsed: Boolean): Expr {
     // Expressions that are part of a statement list are never used, unless they are the last in the list.
     val list = ast.list.mapIndexed { i, expr ->
         resolveExpr(scope, expr, if(i == ast.list.size - 1) resultUsed else false)
@@ -40,7 +40,7 @@ private fun resolveLit(ast: ASTLitExpr, resultUsed: Boolean): Expr {
     return ExprNode(LitExpr(ast.literal), type, resultUsed)
 }
 
-private fun Resolver.resolveCall(scope: Scope, ast: ASTAppExpr, resultUsed: Boolean): Expr {
+private fun resolveCall(scope: Scope, ast: ASTAppExpr, resultUsed: Boolean): Expr {
     // If the operand is a field expression we need special handling, since there are several options:
     // - the field operand is an actual field of its target and has a function type, which we call.
     // - the field operand is not a field, and we produce a function call with the target as first parameter.
@@ -64,11 +64,11 @@ private fun Resolver.resolveCall(scope: Scope, ast: ASTAppExpr, resultUsed: Bool
     val function = scope.findFunction(name) ?: throw ResolveError()
 }
 
-private fun Resolver.resolvePrefix(scope: Scope, ast: ASTPrefixExpr): Expr {
+private fun resolvePrefix(scope: Scope, ast: ASTPrefixExpr): Expr {
     return resolveUnaryCall(scope, Qualified(ast.op, emptyList()), rv(resolveExpr(scope, ast.callee, true)))
 }
 
-private fun Resolver.resolveInfix(scope: Scope, ast: ASTInfixExpr): Expr {
+private fun resolveInfix(scope: Scope, ast: ASTInfixExpr): Expr {
     val e = if(ast.ordered) ast else reorder(scope, ast, 0)
     return resolveBinaryCall(
         scope, Qualified(e.op, emptyList()),
@@ -77,23 +77,23 @@ private fun Resolver.resolveInfix(scope: Scope, ast: ASTInfixExpr): Expr {
     )
 }
 
-private fun testUnaryCall(scope: Scope, name: Qualified, arg: Expr): Expr? {
+private fun testUnaryCall(scope: Scope, name: Qualified, arg: Expr, resultUsed: Boolean): Expr? {
     // Check if this can be a primitive operation.
     // Note that primitive operations can be both functions and operators.
     if(arg.type is PrimType && name.qualifier.isEmpty()) {
         primUnaryOps[name.name]?.let {
-            return resolvePrimitiveUnaryOp(it.second, arg)
+            return resolvePrimitiveUnaryOp(it.second, arg, resultUsed)
         }
     }
     return null
 }
 
-private fun testBinaryCall(scope: Scope, name: Qualified, lhs: Expr, rhs: Expr): Expr? {
+private fun testBinaryCall(scope: Scope, name: Qualified, lhs: Expr, rhs: Expr, resultUsed: Boolean): Expr? {
     // Check if this can be a primitive operation.
     // Note that primitive operations can be both functions and operators.
     if(lhs.type is PrimType && rhs.type is PrimType && name.qualifier.isEmpty()) {
         primBinaryOps[name.name]?.let {
-            return resolvePrimitiveBinaryOp(it.second, lhs, rhs)
+            return resolvePrimitiveBinaryOp(it.second, lhs, rhs, resultUsed)
         }
     }
     return null

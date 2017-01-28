@@ -1,20 +1,37 @@
 package se.rimmer.rc.compiler.resolve
 
+import se.rimmer.rc.compiler.parser.FunType
 import se.rimmer.rc.compiler.parser.Qualified
 import java.util.*
 
-fun Scope.findType(name: Qualified) = findHelper(this, {types}, name, true)
-fun Scope.findConstructor(name: Qualified) = findHelper(this, {constructors}, name, true)
-fun Scope.findFunction(name: Qualified) = findHelper(this, {functions}, name, true)
-fun Scope.findOperator(name: Qualified) = findHelper(this, {ops}, name, true)
+fun Scope.findType(name: Qualified) = findHelper(this, typeFinder, name, true)
+fun Scope.findConstructor(name: Qualified) = findHelper(this, constructorFinder, name, true)
+fun Scope.findFunction(name: Qualified) = findHelper(this, callFinder, name, true)
+fun Scope.findOperator(name: Qualified) = findHelper(this, opFinder, name, true)
+fun Scope.findVariable(name: Qualified) = findHelper(this, varFinder, name, true)
 
-private fun <T> findHelper(scope: Scope, map: Scope.() -> Map<String, T>, name: Qualified, followImports: Boolean): T? {
+private inline fun <T> mapFinder(crossinline map: Scope.() -> Map<String, T>): Scope.(String) -> T? = { map()[it] }
+
+private val typeFinder = mapFinder { types }
+private val constructorFinder = mapFinder { constructors }
+private val opFinder = mapFinder { ops }
+private val varFinder = mapFinder { definedVariables }
+
+private val callFinder: Scope.(String) -> FunctionHead? = {
+    functions[it] ?: variables[it]?.let {
+        if(it.type is FunType) {
+
+        }
+    }
+}
+
+private fun <T> findHelper(scope: Scope, find: Scope.(String) -> T?, name: Qualified, followImports: Boolean): T? {
     // Lookup:
     // - If the name is unqualified, start by searching the current scope.
     // - For qualified names, check if we have an import under that qualifier, then search that.
     // - If nothing is found, search the parent scope while retaining any qualifiers.
     if(name.qualifier.isEmpty()) {
-        val v = scope.map()[name.name]
+        val v = scope.find(name.name)
         if(v != null) return v
     }
 
@@ -23,9 +40,9 @@ private fun <T> findHelper(scope: Scope, map: Scope.() -> Map<String, T>, name: 
         val candidates = ArrayList<T>()
         scope.imports.forEach { _, scope ->
             val v = if(name.qualifier == scope.qualifier) {
-                findHelper(scope.scope, map, Qualified(name.name, emptyList()), false)
+                findHelper(scope.scope, find, Qualified(name.name, emptyList()), false)
             } else {
-                findHelper(scope.scope, map, name, false)
+                findHelper(scope.scope, find, name, false)
             }
 
             if(v != null) candidates.add(v)
@@ -39,7 +56,7 @@ private fun <T> findHelper(scope: Scope, map: Scope.() -> Map<String, T>, name: 
     }
 
     if(scope.parent != null) {
-        return findHelper(scope.parent, map, name, followImports)
+        return findHelper(scope.parent, find, name, followImports)
     } else {
         return null
     }
