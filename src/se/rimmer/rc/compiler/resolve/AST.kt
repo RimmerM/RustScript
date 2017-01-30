@@ -1,12 +1,12 @@
 package se.rimmer.rc.compiler.resolve
 
-import se.rimmer.rc.compiler.parser.DataDecl
-import se.rimmer.rc.compiler.parser.Literal
-import se.rimmer.rc.compiler.parser.Qualified
-import se.rimmer.rc.compiler.parser.TypeDecl
+import se.rimmer.rc.compiler.parser.*
+import se.rimmer.rc.compiler.parser.MapType as ASTMapType
+import se.rimmer.rc.compiler.parser.ArrayType as ASTArrayType
+import se.rimmer.rc.compiler.parser.TupType as ASTTupType
 import java.util.*
 
-data class Scope(val name: Qualified, val parent: Scope?, val function: Function?) {
+data class Scope(val name: Qualified, val parent: Scope?, val function: LocalFunction?) {
     val imports = HashMap<List<String>, ImportedScope>()
     val children = HashMap<String, Scope>()
     val shadows = HashMap<String, Var>()
@@ -26,7 +26,13 @@ data class Scope(val name: Qualified, val parent: Scope?, val function: Function
     var codegen: Any? = null
 }
 
-data class ImportedScope(val scope: Scope, val qualified: Boolean, val qualifier: List<String>, val localSymbols: Set<String>)
+data class ImportedScope(
+    val scope: Scope,
+    val qualified: Boolean,
+    val qualifier: List<String>,
+    val includedSymbols: Set<String>?,
+    val excludedSymbols: Set<String>?
+)
 
 data class Operator(val precedence: Int, val isRight: Boolean)
 
@@ -36,24 +42,25 @@ data class Var(val name: String, val type: Type, val scope: Scope, val isConstan
 
 val Var.isVar: Boolean get() = !isConstant && !isArg
 
+data class FunctionArg(val type: Type, val name: String?, val local: Var?)
+
 class FunctionHead {
-    val args = ArrayList<Var>()
+    val args = ArrayList<FunctionArg>()
     var ret: Type? = null
     var body: Function? = null
 }
 
 interface Function
 
-class LocalFunction(name: Qualified, parentScope: Scope, val head: FunctionHead): Function {
-    val scope = Scope(name, parentScope, null)
+class LocalFunction(var ast: FunDecl?, name: Qualified, parentScope: Scope, val head: FunctionHead): Function {
+    val scope = Scope(name, parentScope, this)
     var content: Expr? = null
-    var generic = false
+
 
     var codegen: Any? = null
 }
 
-class ForeignFunction(val name: Qualified, val externalName: String, val head: FunctionHead): Function
-class VarFunction(val variable: Var, val head: FunctionHead): Function
+class ForeignFunction(var ast: ForeignDecl?, val name: Qualified, val externalName: String, val head: FunctionHead): Function
 
 interface Type
 
@@ -75,7 +82,7 @@ data class GenType(val index: Int): Type
 enum class Primitive(val sourceName: kotlin.String) { Int("Int"), Double("Double"), Bool("Bool"), String("String") }
 data class PrimType(val prim: Primitive): Type
 
-class Field(val name: String?, val index: Int, val type: Type, val container: Type, val content: Expr?, val constant: Boolean)
+data class FunType(val head: FunctionHead): Type
 
 enum class RecordKind { Enum, Single, Multi }
 
@@ -84,30 +91,55 @@ data class RecordType(var ast: DataDecl?, val scope: Scope): Type {
     val constructors = ArrayList<Constructor>()
 }
 
+class Field(val name: String?, val index: Int, val type: Type, val container: Type, val mutable: Boolean)
+
+data class TupType(var ast: ASTTupType?, val fields: List<Field>): Type
+data class ArrayType(var ast: ASTArrayType?, val content: Type): Type
+data class MapType(var ast: ASTMapType?, val from: Type, val to: Type): Type
+
 data class Constructor(val name: Qualified, val index: Int, val parent: RecordType, var content: Type? = null)
 
-data class IfCond(val scope: Expr?, val cond: Expr?)
+data class Use(val value: Value, val user: Any)
 
-enum class CondMode { And, Or }
+open class Value(val name: String?, val type: Type) {
+    val uses = ArrayList<Use>()
+}
 
-interface ExprKind
-data class LitExpr(val literal: Literal): ExprKind
-data class MultiExpr(val list: List<Expr>): ExprKind
-data class VarExpr(val variable: Var): ExprKind
-data class AppExpr(val callee: FunctionHead, val args: List<Expr>): ExprKind
-data class PrimOpExpr(val op: PrimOp, val args: List<Expr>): ExprKind
-data class ConstructExpr(val constructor: Constructor, val args: List<Expr>): ExprKind
-data class AssignExpr(val target: Var, val value: Expr): ExprKind
-data class CoerceExpr(val source: Expr): ExprKind
-data class CoerceLVExpr(val source: Expr): ExprKind
-data class FieldExpr(val container: Expr, val field: Field): ExprKind
-data class RetExpr(val value: Expr): ExprKind
-data class IfExpr(val conds: List<IfCond>, val then: Expr, val otherwise: Expr?, val mode: CondMode, var alwaysTrue: Boolean): ExprKind
-data class WhileExpr(val cond: Expr, val loop: Expr): ExprKind
+class Lit(val literal: Literal, type: Type): Value(null, type)
 
-/**
- * Contains an expression and its metadata.
- * @param used Set when the result of this expression is used by another expression.
- */
-class ExprNode<out T: ExprKind>(val kind: T, val type: Type, val used: Boolean)
-typealias Expr = ExprNode<ExprKind>
+class Block(val function: LocalFunction) {
+    val instructions = ArrayList<Inst>()
+    val symbols = HashMap<String, Value>()
+}
+
+open class Inst(name: String?, type: Type): Value(name, type)
+
+/* Stack instructions. */
+class AllocaInst(name: String?, type: Type): Inst(name, type)
+class LoadInst(name: String?, type: Type, val value: Value): Inst(name, type)
+class StoreInst(name: String?, val value: Value, val to: Value): Inst(name, unitType)
+class LoadFieldInst(name: String?, type: Type, val from: Value, val field: Int): Inst(name, type)
+class StoreFieldInst(name: String?, val value: Value, val to: Value, val field: Int): Inst(name, unitType)
+
+/* Construction instructions. */
+class RecordInst(name: String?, type: RecordType, val fields: List<Value>): Inst(name, type)
+class TupInst(name: String?, type: TupType, val fields: List<Value>): Inst(name, type)
+class ArrayInst(name: String?, type: ArrayType, val values: List<Value>): Inst(name, type)
+class MapInst(name: String?, type: MapType, val pairs: List<Pair<Value, Value>>): Inst(name, type)
+class FunInst(name: String?, type: FunType, val function: LocalFunction): Inst(name, type)
+
+/* Operation instructions. */
+class PrimInst(name: String?, type: Type, val op: PrimOp, val args: List<Value>): Inst(name, type)
+class CallInst(name: String?, val function: FunctionHead, val args: List<Value>): Inst(name, function.ret!!)
+class CallDynInst(name: String?, type: Type, val function: Value, val args: List<Value>): Inst(name, type)
+class CastPrimInst(name: String?, type: Type, val source: Value): Inst(name, type)
+
+/* Record value instructions. */
+class GetFieldInst(name: String?, type: Type, val from: Value, val field: Int): Inst(name, type)
+class UpdateFieldInst(name: String?, val value: Value, val from: Value, val field: Int): Inst(name, from.type)
+
+/* Control flow. */
+class IfInst(name: String?, val condition: Value, val then: Block, val otherwise: Block): Inst(name, unitType)
+class BranchInst(name: String?, val to: Block): Inst(name, unitType)
+class RetInst(val value: Value): Inst(null, value.type)
+class PhiInst(name: String?, type: Type, val values: List<Pair<Value, Block>>): Inst(name, type)

@@ -12,10 +12,14 @@ class CodeBuilder(val w: Writer, val minify: Boolean) {
     val elseHead = "else$space{"
 
     inline fun function(name: String?, parameters: List<String>, body: CodeBuilder.() -> Unit) {
-        startLine()
-        append(if(name != null) "function $name(" else "function(")
+        if(name != null) {
+            startLine()
+            append("function $name(")
+        } else {
+            append("function(")
+        }
 
-        if(parameters.size > 5 && !minify) {
+        if(parameters.size > 6 && !minify) {
             newLine()
             withLevel {
                 startLine()

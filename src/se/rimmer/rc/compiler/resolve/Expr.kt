@@ -9,6 +9,7 @@ import se.rimmer.rc.compiler.parser.FieldExpr as ASTFieldExpr
 import se.rimmer.rc.compiler.parser.VarExpr as ASTVarExpr
 import se.rimmer.rc.compiler.parser.PrefixExpr as ASTPrefixExpr
 import se.rimmer.rc.compiler.parser.InfixExpr as ASTInfixExpr
+import se.rimmer.rc.compiler.parser.ReturnExpr as ASTReturnExpr
 
 fun resolveExpr(scope: Scope, ast: ASTExpr, resultUsed: Boolean): Expr {
     return when(ast) {
@@ -16,6 +17,7 @@ fun resolveExpr(scope: Scope, ast: ASTExpr, resultUsed: Boolean): Expr {
         is ASTLitExpr -> resolveLit(ast, resultUsed)
         is ASTAppExpr -> resolveCall(scope, ast, resultUsed)
         is ASTPrefixExpr -> resolveUnaryCall(scope, Qualified(ast.op, emptyList()), resol)
+        is ASTReturnExpr -> resolveReturn(scope, ast)
         else -> throw NotImplementedError()
     }
 }
@@ -26,6 +28,15 @@ private fun resolveMulti(scope: Scope, ast: ASTMultiExpr, resultUsed: Boolean): 
         resolveExpr(scope, expr, if(i == ast.list.size - 1) resultUsed else false)
     }
     return ExprNode(MultiExpr(list), list.last().type, resultUsed)
+}
+
+private fun resolveReturn(scope: Scope, ast: ASTReturnExpr): Expr {
+    if(scope.function == null) throw ResolveError("return statements are only valid inside a function")
+
+    val arg = resolveExpr(scope, ast.expr, true)
+    val expr = ExprNode(RetExpr(arg), arg.type, false)
+    scope.function.returnPoints.add(expr)
+    return expr
 }
 
 private fun resolveLit(ast: ASTLitExpr, resultUsed: Boolean): Expr {

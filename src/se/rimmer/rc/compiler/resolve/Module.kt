@@ -4,9 +4,11 @@ import se.rimmer.rc.compiler.parser.*
 import se.rimmer.rc.compiler.parser.GenType as ASTGenType
 import se.rimmer.rc.compiler.parser.Module as ASTModule
 import se.rimmer.rc.compiler.parser.TupType as ASTTupType
+import se.rimmer.rc.compiler.parser.FunType as ASTFunType
 import se.rimmer.rc.compiler.parser.Type as ASTType
 import se.rimmer.rc.compiler.parser.Decl as ASTDecl
 import se.rimmer.rc.compiler.parser.Expr as ASTExpr
+import se.rimmer.rc.compiler.parser.MultiExpr as ASTMultiExpr
 import se.rimmer.rc.compiler.parser.Import as ASTImport
 
 class ResolveError(text: String): Exception(text)
@@ -36,18 +38,15 @@ internal fun prepareImports(scope: Scope, handler: ModuleHandler, imports: List<
         val path = source.qualifier + source.name
         val import = handler.findModule(path) ?: throw ResolveError("cannot find module $source")
 
-        val symbols = if(it.include.isNotEmpty()) {
+        val included = if(it.include.isNotEmpty()) {
             it.include.forEach {
                 if(it !in import.exportedSymbols) throw ResolveError("symbol $it is not exported by module $source")
             }
             it.include.toSet()
-        } else if(it.exclude.isNotEmpty()) {
-            import.exportedSymbols - it.exclude
-        } else {
-            import.exportedSymbols
-        }
+        } else null
 
-        scope.imports[path] = ImportedScope(import, it.qualified, listOf(it.localName), symbols)
+        val excluded = if(it.exclude.isNotEmpty()) it.exclude.toSet() else null
+        scope.imports[path] = ImportedScope(import, it.qualified, listOf(it.localName), included, excluded)
     }
 
     // Implicitly import Prelude if the module doesn't do so by itself.
@@ -55,7 +54,7 @@ internal fun prepareImports(scope: Scope, handler: ModuleHandler, imports: List<
     if(!hasPrelude) {
         val path = listOf("Prelude")
         val prelude = handler.findModule(path) ?: throw ResolveError("Cannot find module Prelude")
-        scope.imports[path] = ImportedScope(prelude, false, emptyList(), emptySet())
+        scope.imports[path] = ImportedScope(prelude, false, emptyList(), null, null)
     }
 }
 
@@ -69,14 +68,14 @@ internal fun prepareScope(scope: Scope, decls: List<ASTDecl>, exprs: List<ASTExp
                 }
 
                 val head = FunctionHead()
-                val function = LocalFunction(scope.name.extend(it.name), scope, head)
+                val function = LocalFunction(it, scope.name.extend(it.name), scope, head)
                 head.body = function
                 scope.functions[it.name] = head
             }
             is ForeignDecl -> {
-                if(it.type is FunType) {
+                if(it.type is ASTFunType) {
                     val head = FunctionHead()
-                    val function = ForeignFunction(scope.name.extend(it.internalName), it.externalName, head)
+                    val function = ForeignFunction(it, scope.name.extend(it.internalName), it.externalName, head)
                     head.body = function
                     scope.functions[it.internalName] = head
                 } else {
@@ -96,7 +95,7 @@ internal fun prepareScope(scope: Scope, decls: List<ASTDecl>, exprs: List<ASTExp
 
                 // The constructors are declared here, but resolved later.
                 val record = RecordType(it, scope)
-                val cons = it.cons.mapIndexed { i, c -> Constructor(scope.name.extend(c.name), i, record) }
+                val cons = it.cons.mapIndexed { i, (name) -> Constructor(scope.name.extend(name), i, record) }
                 cons.forEach {
                     if(scope.constructors.containsKey(it.name.name)) {
                         throw ResolveError("redefinition of type constructor ${it.name.name}")
@@ -116,7 +115,7 @@ internal fun resolveScope(scope: Scope) {
     // Perform the resolve pass. All defined names in this scope are now available.
     // Symbols may be resolved lazily when used by other symbols,
     // so we just skip those that are already defined.
-    scope.types.forEach { s, type ->
+    scope.types.forEach { _, type ->
         when(type) {
             is AliasType -> resolveAlias(type)
             is RecordType -> resolveRecord(type)
@@ -124,10 +123,10 @@ internal fun resolveScope(scope: Scope) {
         }
     }
 
-    scope.functions.forEach { t, f ->
+    scope.functions.forEach { _, f ->
         val body = f.body
         when(body) {
-            is ForeignFunction -> resolveForeignFun(body)
+            is ForeignFunction -> resolveForeignFun(scope, body)
             is LocalFunction -> resolveLocalFun(body)
             else -> throw NotImplementedError()
         }
@@ -155,10 +154,66 @@ internal fun resolveRecord(type: RecordType): RecordType {
     return type
 }
 
-internal fun resolveForeignFun(f: ForeignFunction) {
-
+internal fun resolveForeignFun(scope: Scope, f: ForeignFunction) {
+    f.ast?.let {
+        val type = it.type as ASTFunType
+        f.head.ret = resolveType(scope, type.ret, null)
+        type.args.forEach {
+            f.head.args.add(FunctionArg(resolveType(scope, it.type, null), null, null))
+        }
+        f.ast = null
+    }
 }
 
 internal fun resolveLocalFun(f: LocalFunction) {
+    f.ast?.let {
+        it.args.forEach {
+            val type = resolveType(f.scope, it.type ?: throw NotImplementedError(), null)
+            val variable = Var(it.name, type, f.scope, true, true)
+            f.scope.definedVariables[variable.name] = variable
+            f.head.args.add(FunctionArg(type, it.name, variable))
+        }
 
+        val expectedReturn = it.ret?.let { resolveType(f.scope, it, null) }
+        val resultUsed = when(it.body) {
+            is ASTMultiExpr -> false
+            else -> true
+        }
+
+        val content = resolveExpr(f.scope, it.body, resultUsed)
+        val body = when(content.kind) {
+            is MultiExpr, is RetExpr -> content
+            else -> ExprNode(RetExpr(content), content.type, false)
+        }
+
+        if(resultUsed) {
+            if(expectedReturn != null && !typesCompatible(expectedReturn, body.type)) {
+                throw ResolveError("declared type and actual type of function ${f.scope.name} don't match")
+            }
+            f.head.ret = body.type
+        } else if(f.returnPoints.isEmpty()) {
+            if(expectedReturn != null && !typesCompatible(expectedReturn, unitType)) {
+                throw ResolveError("function ${f.scope.name} is declared to return a value, but doesn't")
+            }
+            f.head.ret = unitType
+        } else {
+            var previous: Type? = null
+            for(p in f.returnPoints) {
+                if(previous != null) {
+                    if(!typesCompatible(previous, p.type)) {
+                        throw ResolveError("types of return statements in function ${f.scope.name} don't match")
+                    }
+                }
+                previous = p.type
+            }
+
+            if(expectedReturn != null && !typesCompatible(expectedReturn, previous!!)) {
+                throw ResolveError("declared type and actual type of function ${f.scope.name} don't match")
+            }
+            f.head.ret = previous!!
+        }
+
+        f.content = body
+        f.ast = null
+    }
 }

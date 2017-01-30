@@ -71,6 +71,10 @@ fun resolveGenType(scope: Scope, type: ASTGenType, tScope: SimpleType?): Type {
     throw ResolveError("undefined generic type '${type.name}'")
 }
 
+fun typesCompatible(a: Type, b: Type): Boolean {
+    return false
+}
+
 private fun getGenIndex(name: String, scope: SimpleType): Int? {
     val i = scope.kind.indexOfFirst { it == name }
     return if(i >= 0) i else null

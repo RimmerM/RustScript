@@ -1,6 +1,5 @@
 package se.rimmer.rc.compiler.resolve
 
-import se.rimmer.rc.compiler.parser.FunType
 import se.rimmer.rc.compiler.parser.Qualified
 import java.util.*
 
@@ -18,11 +17,7 @@ private val opFinder = mapFinder { ops }
 private val varFinder = mapFinder { definedVariables }
 
 private val callFinder: Scope.(String) -> FunctionHead? = {
-    functions[it] ?: variables[it]?.let {
-        if(it.type is FunType) {
-
-        }
-    }
+    functions[it] ?: definedVariables[it]?.let { if(it.type is FunType) it.type.head else null }
 }
 
 private fun <T> findHelper(scope: Scope, find: Scope.(String) -> T?, name: Qualified, followImports: Boolean): T? {

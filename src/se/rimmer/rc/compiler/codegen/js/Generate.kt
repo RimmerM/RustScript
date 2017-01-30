@@ -8,6 +8,7 @@ import se.rimmer.rc.compiler.resolve.AssignExpr
 import se.rimmer.rc.compiler.resolve.CoerceExpr
 import se.rimmer.rc.compiler.resolve.ConstructExpr
 import se.rimmer.rc.compiler.resolve.FieldExpr
+import se.rimmer.rc.compiler.resolve.FunExpr
 import se.rimmer.rc.compiler.resolve.IfExpr
 import se.rimmer.rc.compiler.resolve.LitExpr
 import se.rimmer.rc.compiler.resolve.MultiExpr
@@ -50,13 +51,13 @@ class Generator(writer: Writer, val options: GenOptions) {
     private fun prepareScope(scope: Scope) {
         if(scope.codegen == null) {
             scope.codegen = ScopeGen()
-            scope.variables.forEach { prepareVar(it) }
+            scope.definedVariables.forEach { prepareVar(it.value) }
         }
     }
 
     private fun genScope(scope: Scope) {
         scope.imports.forEach { _, import -> genModule(import.scope) }
-        scope.children.forEach { genModule(it) }
+        scope.children.forEach { genModule(it.value) }
 
         scope.functions.forEach { _, f ->
             val body = f.body
@@ -69,7 +70,7 @@ class Generator(writer: Writer, val options: GenOptions) {
                         // Define any variables that are used.
                         // Normally variables are defined lazily,
                         // but in the case of local functions they have to be defined in the preceding scope.
-                        if(it.scope === scope) defineVar(it, null)
+                        if(it.value.scope === scope) defineVar(it.value, null)
                     }
                     prepareFun(body)
                     genFun(body)
@@ -84,12 +85,19 @@ class Generator(writer: Writer, val options: GenOptions) {
         }
     }
 
-    private fun genFun(f: LocalFunction) {
+    private fun genFunction(f: LocalFunction) {
         prepareScope(f.scope)
-        b.function(f.gen.mangledName, f.head.args.map { it.gen.mangledName }) {
+        b.function(f.gen.mangledName, f.head.args.map { it.local!!.gen.mangledName }) {
             genScope(f.scope)
             f.content?.let { genExpr(it, f.scope) }
         }
+    }
+
+    private fun genFun(f: FunExpr, scope: Scope): String {
+        val name = localName(null, scope)
+        b.append("var $name${b.space}=${b.space}")
+
+        return name
     }
 
     private fun genExpr(expr: Expr, scope: Scope) = when(expr.kind) {
@@ -105,6 +113,7 @@ class Generator(writer: Writer, val options: GenOptions) {
         is CoerceExpr -> genCoerce(expr.kind, scope)
         is IfExpr -> genIf(expr, expr.kind, scope)
         is WhileExpr -> genWhile(expr.kind, scope)
+        is FunExpr -> genFun(expr.kind, scope)
         else -> throw NotImplementedError()
     }
 
@@ -339,7 +348,7 @@ class Generator(writer: Writer, val options: GenOptions) {
         }
 
         val v = n.toString()
-        return if(scope.variables.find { it.gen.mangledName == v } != null) {
+        return if(scope.definedVariables.values.find { it.gen.mangledName == v } != null) {
             localName(name, scope)
         } else {
             n.toString()
