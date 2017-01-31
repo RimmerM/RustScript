@@ -1,24 +1,20 @@
 package se.rimmer.rc.compiler.resolve
 
 import se.rimmer.rc.compiler.parser.*
+import se.rimmer.rc.compiler.parser.GenType
 import se.rimmer.rc.compiler.parser.MapType as ASTMapType
 import se.rimmer.rc.compiler.parser.ArrayType as ASTArrayType
 import se.rimmer.rc.compiler.parser.TupType as ASTTupType
 import java.util.*
 
-data class Scope(val name: Qualified, val parent: Scope?, val function: LocalFunction?) {
-    val imports = HashMap<List<String>, ImportedScope>()
-    val children = HashMap<String, Scope>()
-    val shadows = HashMap<String, Var>()
-    val captures = HashMap<String, Var>()
-    val functions = HashMap<String, FunctionHead>()
+data class Module(val name: Qualified) {
+    val imports = HashMap<List<String>, Import>()
+    val functions = HashMap<String, Function>()
+    val templateFunctions = HashMap<String, Function>()
+    val foreignFunctions = HashMap<String, ForeignFunction>()
     val types = HashMap<String, Type>()
     val constructors = HashMap<String, Constructor>()
     val ops = HashMap<String, Operator>()
-
-    // The variables that have been defined to the current resolving point.
-    // Used for lookups to make sure that variables are initialized before use.
-    val definedVariables = HashMap<String, Var>()
 
     // The symbols defined in this module that are visible externally.
     val exportedSymbols = HashSet<String>()
@@ -26,8 +22,8 @@ data class Scope(val name: Qualified, val parent: Scope?, val function: LocalFun
     var codegen: Any? = null
 }
 
-data class ImportedScope(
-    val scope: Scope,
+data class Import(
+    val module: Module,
     val qualified: Boolean,
     val qualifier: List<String>,
     val includedSymbols: Set<String>?,
@@ -36,57 +32,34 @@ data class ImportedScope(
 
 data class Operator(val precedence: Int, val isRight: Boolean)
 
-data class Var(val name: String, val type: Type, val scope: Scope, val isConstant: Boolean, val isArg: Boolean) {
-    var codegen: Any? = null
-}
-
-val Var.isVar: Boolean get() = !isConstant && !isArg
-
-data class FunctionArg(val type: Type, val name: String?, val local: Var?)
-
-class FunctionHead {
-    val args = ArrayList<FunctionArg>()
-    var ret: Type? = null
-    var body: Function? = null
-}
-
-interface Function
-
-class LocalFunction(var ast: FunDecl?, name: Qualified, parentScope: Scope, val head: FunctionHead): Function {
-    val scope = Scope(name, parentScope, this)
-    var content: Expr? = null
-
-
-    var codegen: Any? = null
-}
-
-class ForeignFunction(var ast: ForeignDecl?, val name: Qualified, val externalName: String, val head: FunctionHead): Function
+class ForeignFunction(var ast: ForeignDecl?, val name: Qualified, val externalName: String, val from: String, val type: FunType)
 
 interface Type
 
-data class UnknownType(val v: Unit): Type
-val unknownType = UnknownType(Unit)
+data class ErrorType(val v: Unit): Type
+val errorType = ErrorType(Unit)
 
 data class UnitType(val v: Unit): Type
 val unitType = UnitType(Unit)
 
-data class AliasType(var ast: TypeDecl?, var target: Type, val scope: Scope): Type
-data class LVType(val target: Type): Type
+data class GenField(val name: String?, val type: Type, val mutable: Boolean, val gen: GenType)
 
-/**
- * Generic types are defined by an index to the list of generic parameters of the parent scope.
- * For example, in the type 'Either(a, b)', 'b' is represented with the index 1.
- */
-data class GenType(val index: Int): Type
+class GenType {
+    val classes: MutableSet<TypeClass> = Collections.newSetFromMap(IdentityHashMap<TypeClass, Boolean>())
+    val fields = HashMap<String, GenField>()
+}
 
 enum class Primitive(val sourceName: kotlin.String) { Int("Int"), Double("Double"), Bool("Bool"), String("String") }
 data class PrimType(val prim: Primitive): Type
 
-data class FunType(val head: FunctionHead): Type
+data class RefType(val to: Type): Type
+
+data class FunArg(val name: String?, val index: Int, val type: Type)
+data class FunType(val args: List<FunArg>, val result: Type): Type
 
 enum class RecordKind { Enum, Single, Multi }
 
-data class RecordType(var ast: DataDecl?, val scope: Scope): Type {
+data class RecordType(var ast: DataDecl?): Type {
     var kind = RecordKind.Multi
     val constructors = ArrayList<Constructor>()
 }
@@ -99,47 +72,106 @@ data class MapType(var ast: ASTMapType?, val from: Type, val to: Type): Type
 
 data class Constructor(val name: Qualified, val index: Int, val parent: RecordType, var content: Type? = null)
 
-data class Use(val value: Value, val user: Any)
-
-open class Value(val name: String?, val type: Type) {
-    val uses = ArrayList<Use>()
+class TypeClass(val name: Qualified) {
+    val parameters = HashMap<String, GenType>()
+    val functions = HashMap<String, FunType>()
 }
 
-class Lit(val literal: Literal, type: Type): Value(null, type)
+class ClassInstance(val types: List<Type>, val typeClass: TypeClass) {
+    val implementations = HashMap<String, Function>()
+}
 
-class Block(val function: LocalFunction) {
+class Function(val module: Module, val name: Qualified) {
+    // The function entry point.
+    val body = Block(this)
+
+    // All defined blocks in this function.
+    val blocks = arrayListOf(body)
+
+    // All basic blocks that return at the end.
+    val returns = ArrayList<RetInst>()
+
+    // The return type of this function.
+    var returnType: Type? = null
+
+    // The incoming set of normal function arguments.
+    val args = HashMap<String, Value>()
+
+    var codegen: Any? = null
+}
+
+// A sequence of instructions that are executed without interruption.
+class Block(val function: Function) {
     val instructions = ArrayList<Inst>()
-    val symbols = HashMap<String, Value>()
+
+    // The defined values with a name in this block up to this point.
+    val namedValues = HashMap<String, Value>()
+
+    // All blocks that can branch to this one.
+    val incoming: MutableSet<Block> = Collections.newSetFromMap(IdentityHashMap<Block, Boolean>())
+
+    // All blocks this one can possibly branch to.
+    val outgoing: MutableSet<Block> = Collections.newSetFromMap(IdentityHashMap<Block, Boolean>())
+
+    // The closest block that always executes before this one.
+    var preceding: Block? = null
+
+    // The closest block that always executes after this one.
+    var succeeding: Block? = null
+
+    // Set if this block returns at the end.
+    var returns = false
+
+    // Set when the block contains a terminating instruction.
+    // Appending instructions after this is set will have no effect.
+    var complete = false
 }
 
-open class Inst(name: String?, type: Type): Value(name, type)
+// A single usage of a value by an instruction.
+data class Use(val value: Value, val user: Inst)
+
+// A local register containing the result of some operation.
+open class Value(val block: Block, val name: String?, val type: Type) {
+    // Each instruction that uses this value.
+    val uses = ArrayList<Use>()
+
+    // Each block this value is used by.
+    val blockUses: MutableSet<Block> = Collections.newSetFromMap(IdentityHashMap<Block, Boolean>())
+}
+
+// An immediate value that can be used by instructions.
+class Lit(block: Block, name: String?, type: Type, val literal: Literal): Value(block, name, type)
+
+// A single operation that can be performed inside a function block.
+open class Inst(block: Block, name: String?, type: Type, val usedValues: List<Value>): Value(block, name, type)
 
 /* Stack instructions. */
-class AllocaInst(name: String?, type: Type): Inst(name, type)
-class LoadInst(name: String?, type: Type, val value: Value): Inst(name, type)
-class StoreInst(name: String?, val value: Value, val to: Value): Inst(name, unitType)
-class LoadFieldInst(name: String?, type: Type, val from: Value, val field: Int): Inst(name, type)
-class StoreFieldInst(name: String?, val value: Value, val to: Value, val field: Int): Inst(name, unitType)
+class AllocaInst(block: Block, name: String?, type: Type): Inst(block, name, type, emptyList())
+class LoadInst(block: Block, name: String?, type: Type, val value: Value): Inst(block, name, type, listOf(value))
+class StoreInst(block: Block, name: String?, val value: Value, val to: Value): Inst(block, name, unitType, listOf(value, to))
+class LoadFieldInst(block: Block, name: String?, type: Type, val from: Value, val field: Int): Inst(block, name, type, listOf(from))
+class StoreFieldInst(block: Block, name: String?, val value: Value, val to: Value, val field: Int): Inst(block, name, unitType, listOf(value, to))
 
 /* Construction instructions. */
-class RecordInst(name: String?, type: RecordType, val fields: List<Value>): Inst(name, type)
-class TupInst(name: String?, type: TupType, val fields: List<Value>): Inst(name, type)
-class ArrayInst(name: String?, type: ArrayType, val values: List<Value>): Inst(name, type)
-class MapInst(name: String?, type: MapType, val pairs: List<Pair<Value, Value>>): Inst(name, type)
-class FunInst(name: String?, type: FunType, val function: LocalFunction): Inst(name, type)
+class RecordInst(block: Block, name: String?, type: RecordType, val fields: List<Value>): Inst(block, name, type, fields)
+class TupInst(block: Block, name: String?, type: TupType, val fields: List<Value>): Inst(block, name, type, fields)
+class ArrayInst(block: Block, name: String?, type: ArrayType, val values: List<Value>): Inst(block, name, type, values)
+class MapInst(block: Block, name: String?, type: MapType, val pairs: List<Pair<Value, Value>>): Inst(block, name, type, pairs.flatMap { it.toList() })
+class FunInst(block: Block, name: String?, type: FunType, val function: Function, val captures: List<Value>): Inst(block, name, type, captures)
 
 /* Operation instructions. */
-class PrimInst(name: String?, type: Type, val op: PrimOp, val args: List<Value>): Inst(name, type)
-class CallInst(name: String?, val function: FunctionHead, val args: List<Value>): Inst(name, function.ret!!)
-class CallDynInst(name: String?, type: Type, val function: Value, val args: List<Value>): Inst(name, type)
-class CastPrimInst(name: String?, type: Type, val source: Value): Inst(name, type)
+class PrimInst(block: Block, name: String?, type: Type, val op: PrimOp, val args: List<Value>): Inst(block, name, type, args)
+class CallInst(block: Block, name: String?, val function: Function, val args: List<Value>): Inst(block, name, function.returnType!!, args)
+class CallDynInst(block: Block, name: String?, type: Type, val function: Value, val args: List<Value>): Inst(block, name, type, args)
+class CallForeignInst(block: Block, name: String?, type: Type, val function: ForeignFunction, val args: List<Value>): Inst(block, name, type, args)
+class CastPrimInst(block: Block, name: String?, type: Type, val source: Value): Inst(block, name, type, listOf(source))
 
 /* Record value instructions. */
-class GetFieldInst(name: String?, type: Type, val from: Value, val field: Int): Inst(name, type)
-class UpdateFieldInst(name: String?, val value: Value, val from: Value, val field: Int): Inst(name, from.type)
+class GetFieldInst(block: Block, name: String?, type: Type, val from: Value, val field: Int): Inst(block, name, type, listOf(from))
+class UpdateFieldInst(block: Block, name: String?, val value: Value, val from: Value, val field: Int): Inst(block, name, from.type, listOf(value, from))
 
 /* Control flow. */
-class IfInst(name: String?, val condition: Value, val then: Block, val otherwise: Block): Inst(name, unitType)
-class BranchInst(name: String?, val to: Block): Inst(name, unitType)
-class RetInst(val value: Value): Inst(null, value.type)
-class PhiInst(name: String?, type: Type, val values: List<Pair<Value, Block>>): Inst(name, type)
+class IfInst(block: Block, name: String?, val condition: Value, val then: Block, val otherwise: Block): Inst(block, name, unitType, listOf(condition))
+class BranchInst(block: Block, name: String?, val to: Block): Inst(block, name, unitType, emptyList())
+class RetInst(block: Block, val value: Value): Inst(block, null, value.type, listOf(value))
+class PhiInst(block: Block, name: String?, type: Type, val values: List<Pair<Value, Block>>): Inst(block, name, type, values.map { it.first })
