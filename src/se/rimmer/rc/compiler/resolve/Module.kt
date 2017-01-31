@@ -14,25 +14,24 @@ import se.rimmer.rc.compiler.parser.Import as ASTImport
 class ResolveError(text: String): Exception(text)
 
 interface ModuleHandler {
-    fun findModule(path: List<String>): Scope?
+    fun findModule(path: List<String>): Module?
 }
 
-fun resolveModule(ast: ASTModule, handler: ModuleHandler): Scope {
-    /*
-     * We need to do two passes here.
-     * In the first pass we add each declared identifier to the appropriate list in its scope.
-     * This makes sure that every dependent identifier can be found in the second pass,
-     * where we resolve the content of each declared identifier.
-     */
+fun resolveModule(ast: ASTModule, handler: ModuleHandler): Module {
+    val module = Module(ast.name)
 
-    val module = Scope(ast.name, null, null)
+    // Resolve the module contents in usage order.
+    // Types use imports but nothing else, globals use types and imports, functions use everything.
+    // Note that the initialization of globals is handled in the function pass,
+    // since this requires knowledge of the whole module.
     prepareImports(module, handler, ast.imports)
-    prepareScope(module, ast.decls, emptyList())
-    resolveScope(module)
+    resolveTypes(module, ast.decls)
+    resolveGlobals(module, ast.decls)
+    resolveFunctions(module, ast.decls)
     return module
 }
 
-internal fun prepareImports(scope: Scope, handler: ModuleHandler, imports: List<ASTImport>) {
+internal fun prepareImports(module: Module, handler: ModuleHandler, imports: List<ASTImport>) {
     imports.forEach {
         val source = it.source
         val path = source.qualifier + source.name
@@ -46,76 +45,51 @@ internal fun prepareImports(scope: Scope, handler: ModuleHandler, imports: List<
         } else null
 
         val excluded = if(it.exclude.isNotEmpty()) it.exclude.toSet() else null
-        scope.imports[path] = ImportedScope(import, it.qualified, listOf(it.localName), included, excluded)
+        module.imports[path] = Import(import, it.qualified, listOf(it.localName), included, excluded)
     }
 
     // Implicitly import Prelude if the module doesn't do so by itself.
-    val hasPrelude = scope.imports.values.find { it.scope.name.qualifier.isEmpty() && it.scope.name.name == "Prelude" } != null
+    val hasPrelude = module.imports.values.find { it.module.name.qualifier.isEmpty() && it.module.name.name == "Prelude" } != null
     if(!hasPrelude) {
         val path = listOf("Prelude")
         val prelude = handler.findModule(path) ?: throw ResolveError("Cannot find module Prelude")
-        scope.imports[path] = ImportedScope(prelude, false, emptyList(), null, null)
+        module.imports[path] = Import(prelude, false, emptyList(), null, null)
     }
 }
 
-internal fun prepareScope(scope: Scope, decls: List<ASTDecl>, exprs: List<ASTExpr>) {
-    // Perform the declaration pass.
+internal fun resolveGlobals(module: Module, decls: List<ASTDecl>) {
+
+}
+
+internal fun resolveFunctions(module: Module, decls: List<ASTDecl>) {
+    // Prepare by resolving all function signatures.
     decls.forEach {
         when(it) {
             is FunDecl -> {
-                if(scope.functions.containsKey(it.name)) {
+                if(module.functions.containsKey(it.name)) {
                     throw ResolveError("redefinition of function ${it.name}")
                 }
 
-                val head = FunctionHead()
-                val function = LocalFunction(it, scope.name.extend(it.name), scope, head)
-                head.body = function
-                scope.functions[it.name] = head
+                val function = Function(module, module.name.extend(it.name))
+                module.functions[it.name] = function
             }
             is ForeignDecl -> {
                 if(it.type is ASTFunType) {
-                    val head = FunctionHead()
-                    val function = ForeignFunction(it, scope.name.extend(it.internalName), it.externalName, head)
-                    head.body = function
-                    scope.functions[it.internalName] = head
+                    val function = ForeignFunction(it, module, module.name.extend(it.internalName), it.externalName, it.from, null)
+                    module.foreignFunctions[it.internalName] = function
                 } else {
                     throw NotImplementedError()
                 }
             }
-            is TypeDecl -> {
-                if(scope.types.containsKey(it.type.name)) {
-                    throw ResolveError("redefinition of type ${it.type.name}")
-                }
-                scope.types[it.type.name] = AliasType(it, unknownType, scope)
-            }
-            is DataDecl -> {
-                if(scope.types.containsKey(it.type.name)) {
-                    throw ResolveError("redefinition of type ${it.type.name}")
-                }
-
-                // The constructors are declared here, but resolved later.
-                val record = RecordType(it, scope)
-                val cons = it.cons.mapIndexed { i, (name) -> Constructor(scope.name.extend(name), i, record) }
-                cons.forEach {
-                    if(scope.constructors.containsKey(it.name.name)) {
-                        throw ResolveError("redefinition of type constructor ${it.name.name}")
-                    }
-                    scope.constructors[it.name.name] = it
-                }
-
-                record.constructors.addAll(cons)
-                scope.types[it.type.name]
-            }
-            else -> throw NotImplementedError()
         }
     }
 }
 
-internal fun resolveScope(scope: Scope) {
+internal fun resolveScope(module: Module) {
     // Perform the resolve pass. All defined names in this scope are now available.
     // Symbols may be resolved lazily when used by other symbols,
     // so we just skip those that are already defined.
-    scope.types.forEach { _, type ->
+    module.types.forEach { _, type ->
         when(type) {
             is AliasType -> resolveAlias(type)
             is RecordType -> resolveRecord(type)
@@ -123,7 +97,11 @@ internal fun resolveScope(scope: Scope) {
         }
     }
 
-    scope.functions.forEach { _, f ->
+    module.foreignFunctions.forEach { _, f -> resolveForeignFun(f) }
+
+    module.functions.forEach { _, f ->
+        resolveFunction(f)
+
         val body = f.body
         when(body) {
             is ForeignFunction -> resolveForeignFun(scope, body)
@@ -154,7 +132,7 @@ internal fun resolveRecord(type: RecordType): RecordType {
     return type
 }
 
-internal fun resolveForeignFun(scope: Scope, f: ForeignFunction) {
+internal fun resolveForeignFun(f: ForeignFunction) {
     f.ast?.let {
         val type = it.type as ASTFunType
         f.head.ret = resolveType(scope, type.ret, null)
@@ -165,7 +143,7 @@ internal fun resolveForeignFun(scope: Scope, f: ForeignFunction) {
     }
 }
 
-internal fun resolveLocalFun(f: LocalFunction) {
+internal fun resolveFun(f: Function) {
     f.ast?.let {
         it.args.forEach {
             val type = resolveType(f.scope, it.type ?: throw NotImplementedError(), null)

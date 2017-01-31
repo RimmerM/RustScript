@@ -1,10 +1,10 @@
 package se.rimmer.rc.compiler.resolve
 
 import se.rimmer.rc.compiler.parser.*
-import se.rimmer.rc.compiler.parser.GenType
 import se.rimmer.rc.compiler.parser.MapType as ASTMapType
 import se.rimmer.rc.compiler.parser.ArrayType as ASTArrayType
 import se.rimmer.rc.compiler.parser.TupType as ASTTupType
+import se.rimmer.rc.compiler.parser.TypeDecl as ASTTypeDecl
 import java.util.*
 
 data class Module(val name: Qualified) {
@@ -32,7 +32,14 @@ data class Import(
 
 data class Operator(val precedence: Int, val isRight: Boolean)
 
-class ForeignFunction(var ast: ForeignDecl?, val name: Qualified, val externalName: String, val from: String, val type: FunType)
+class ForeignFunction(
+    var ast: ForeignDecl?,
+    val module: Module,
+    val name: Qualified,
+    val externalName: String,
+    val from: String?,
+    var type: FunType? = null
+)
 
 interface Type
 
@@ -52,6 +59,7 @@ class GenType {
 enum class Primitive(val sourceName: kotlin.String) { Int("Int"), Double("Double"), Bool("Bool"), String("String") }
 data class PrimType(val prim: Primitive): Type
 
+data class AliasType(val generics: List<GenType>, var to: Type, var ast: ASTTypeDecl?): Type
 data class RefType(val to: Type): Type
 
 data class FunArg(val name: String?, val index: Int, val type: Type)
@@ -71,6 +79,10 @@ data class ArrayType(var ast: ASTArrayType?, val content: Type): Type
 data class MapType(var ast: ASTMapType?, val from: Type, val to: Type): Type
 
 data class Constructor(val name: Qualified, val index: Int, val parent: RecordType, var content: Type? = null)
+
+class GenScope {
+    val types = ArrayList<GenType>()
+}
 
 class TypeClass(val name: Qualified) {
     val parameters = HashMap<String, GenType>()
