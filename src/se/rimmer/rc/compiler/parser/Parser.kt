@@ -249,14 +249,19 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
         if(token.type == Token.Type.BraceL) {
             return parseTupExpr()
         } else if(token.type == Token.Type.ConID) {
-            val type = ConType(parseQualified())
-            if(token.type == Token.Type.ParenL) {
-                val args = parens { sepBy1(Token.Type.Comma) { parseTypedExpr() } }
-                return ConstructExpr(type, args)
-            } else if(token.type == Token.Type.BraceL) {
-                return ConstructExpr(type, listOf(parseTupExpr()))
+            val id = parseQualified()
+            if(id.isVar) {
+                return VarExpr(id)
             } else {
-                return ConstructExpr(type, emptyList())
+                val type = ConType(id)
+                if(token.type == Token.Type.ParenL) {
+                    val args = parens { sepBy1(Token.Type.Comma) { parseTypedExpr() } }
+                    return ConstructExpr(type, args)
+                } else if(token.type == Token.Type.BraceL) {
+                    return ConstructExpr(type, listOf(parseTupExpr()))
+                } else {
+                    return ConstructExpr(type, emptyList())
+                }
             }
         } else if(token.type == Token.Type.ParenL) {
             eat()
@@ -278,10 +283,10 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
                 }
             }
 
-            val firstArg = if(e is VarExpr) {
-                Arg(e.name, null)
-            } else if(e is CoerceExpr && e.target is VarExpr) {
-                Arg(e.target.name, e.type)
+            val firstArg = if(e is VarExpr && e.name.qualifier.isEmpty()) {
+                Arg(e.name.name, null)
+            } else if(e is CoerceExpr && e.target is VarExpr && e.target.name.qualifier.isEmpty()) {
+                Arg(e.target.name.name, e.type)
             } else {
                 throw ParseError("Expected ')' or a function argument")
             }
@@ -315,7 +320,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
         } else if(token.type == Token.Type.VarID) {
             val id = token.idPayload
             eat()
-            return VarExpr(id)
+            return VarExpr(Qualified(id, emptyList(), true))
         } else if(token.type == Token.Type.ParenL) {
             return NestedExpr(parens { parseTypedExpr() })
         } else {
@@ -382,7 +387,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
                 eat()
                 return TupArg(id, parseTypedExpr())
             } else {
-                return TupArg(null, VarExpr(id))
+                return TupArg(null, VarExpr(Qualified(id, emptyList(), true)))
             }
         } else {
             return TupArg(null, parseTypedExpr())
@@ -527,13 +532,23 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
     fun parseQualified(): Qualified {
         val name = parseConID()
         val qualifier = ArrayList<String>()
+        var isVar = false
+
         qualifier.add(name)
         while(token.type == Token.Type.opDot) {
             eat()
-            qualifier.add(parseConID())
+
+            if(token.type == Token.Type.VarID || token.type == Token.Type.ConID) {
+                qualifier.add(token.idPayload)
+                isVar = token.type == Token.Type.VarID
+                eat()
+                if(isVar) break
+            } else {
+                throw ParseError("expected variable or constructor name")
+            }
         }
 
-        return Qualified(qualifier.last(), qualifier.dropLast(1))
+        return Qualified(qualifier.last(), qualifier.dropLast(1), isVar)
     }
 
     fun parseArg(requireType: Boolean): Arg {

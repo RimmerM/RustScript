@@ -8,6 +8,7 @@ class Module(val name: Qualified) {
     val imports = ArrayList<Import>()
     val decls = ArrayList<Decl>()
     val ops = HashMap<String, Fixity>()
+    val exports = ArrayList<Export>()
 }
 
 data class Import(
@@ -18,14 +19,16 @@ data class Import(
     val exclude: List<String>
 )
 
+data class Export(val name: Qualified, val qualified: Boolean, val exportName: String)
+
 enum class FixityKind { Left, Right, Prefix }
 data class Fixity(val kind: FixityKind, val precedence: Int)
 
-data class Qualified(val name: String, val qualifier: List<String>) {
+data class Qualified(val name: String, val qualifier: List<String>, val isVar: Boolean) {
     override fun toString() = qualifier.joinToString(".") + '.' + name
 }
 
-fun Qualified.extend(name: String) = Qualified(name, qualifier + name)
+fun Qualified.extend(name: String) = Qualified(name, qualifier + name, isVar)
 
 interface Literal
 data class RationalLiteral(val v: BigDecimal): Literal
@@ -56,10 +59,10 @@ interface Expr
 data class LitExpr(val literal: Literal): Expr
 data class NestedExpr(val expr: Expr): Expr
 data class MultiExpr(val list: List<Expr>): Expr
-data class VarExpr(val name: String): Expr
+data class VarExpr(val name: Qualified): Expr
 data class AppExpr(val callee: Expr, val args: List<Expr>): Expr
 data class InfixExpr(val op: String, var lhs: Expr, var rhs: Expr): Expr {var ordered = false}
-data class PrefixExpr(val op: String, val callee: Expr): Expr
+data class PrefixExpr(val op: String, val arg: Expr): Expr
 data class IfExpr(val cond: Expr, val then: Expr, val otherwise: Expr?): Expr
 data class MultiIfExpr(val cases: List<IfCase>): Expr
 data class DeclExpr(val name: String, val content: Expr?, val mutable: Boolean): Expr
@@ -93,6 +96,7 @@ data class FunDecl(val name: String, val args: List<Arg>, val ret: Type?, val bo
 data class TypeDecl(val type: SimpleType, val target: Type): Decl
 data class DataDecl(val type: SimpleType, val cons: List<Constructor>): Decl
 data class ClassDecl(val type: SimpleType, val decls: List<Decl>): Decl
+data class InstanceDecl(val type: SimpleType, val classType: SimpleType?, val decls: List<Decl>): Decl
 data class ForeignDecl(val externalName: String, val internalName: String, val from: String?, val type: Type): Decl
 
 data class Constructor(val name: String, val content: Type?)
