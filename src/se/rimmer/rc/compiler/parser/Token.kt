@@ -83,12 +83,16 @@ class Token {
         Literal,
         Special,
         Identifier,
-        Keyword
+        Keyword,
+        Inactive
     }
 
-    var sourceLine = 0
-    var sourceColumn = 0
-    var length = 0
+    var startLine = 0
+    var endLine = 0
+    var startColumn = 0
+    var endColumn = 0
+    var startOffset = 0
+    var endOffset = 0
     var type = Type.EndOfFile
     var kind = Kind.Special
 
@@ -103,9 +107,12 @@ class Token {
 
     fun copy(): Token {
         val t = Token()
-        t.sourceLine = sourceLine
-        t.sourceColumn = sourceColumn
-        t.length = length
+        t.startLine = startLine
+        t.endLine = endLine
+        t.startColumn = startColumn
+        t.endColumn = endColumn
+        t.startOffset = startOffset
+        t.endOffset = endOffset
         t.type = type
         t.kind = kind
         t.intPayload = intPayload

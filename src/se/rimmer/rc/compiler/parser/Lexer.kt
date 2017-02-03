@@ -1,21 +1,27 @@
 package se.rimmer.rc.compiler.parser
 
-import se.rimmer.rc.compiler.Diagnostics
+interface LexerListener {
+    fun onWarning(warning: String) {}
+    fun onError(error: String) {}
+    fun onToken(token: Token) {}
+}
 
-/**
- * A lexer for Haskell 2010 with unlimited lookahead.
- * This is implemented through the function PeekNext(), which returns the token after the provided one.
- * The lexer implements the layout rules by inserting the '{', ';' and '}' tokens according to the spec.
- * If no module specification is found at the start of the file,
- * it assumes that the base indentation level is the indentation of the first token.
- */
-class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
+enum class ParseMode {
+    // Generate a token for every part of the source code.
+    Full,
+
+    // Only generate tokens for code that contributes to the compilation.
+    Active
+}
+
+class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val listener: LexerListener) {
     /**
      * Returns the next token from the stream.
      * On the next call to Next(), the returned token is overwritten with the data from that call.
      */
     fun next(): Token {
         parseToken()
+        listener.onToken(token)
         return token
     }
 
@@ -24,70 +30,95 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
     private fun hasMore(index: Int) = p + index < text.length
     private fun next(index: Int) = text[p + index]
 
+    private fun parseWhitespace(): Boolean {
+        val start = p
+        while(hasMore && !whiteChar_UpdateLine()) {
+            p++
+        }
+
+        if(start != p) {
+            token.type = Token.Type.Whitespace
+            token.kind = Token.Kind.Inactive
+            return true
+        } else {
+            return false
+        }
+    }
+
+    private fun parseComment(): Boolean {
+        if(current == '-' && next(1) == '-' && (text.length - p <= 2 || !isSymbol(next(2)))) {
+            // Skip the current line.
+            p += 2
+            while(hasMore && current != '\n') {
+                p++
+            }
+
+            // If this is a newline, we update the location.
+            // If it is the file end, the caller will take care of it.
+            if(current == '\n') {
+                nextLine()
+                p++
+            }
+
+            token.type = Token.Type.Comment
+            token.kind = Token.Kind.Inactive
+            return true
+        } else if(current == '{' && next(1) == '-') {
+            // The current nested comment depth.
+            var level = 1
+
+            // Skip until the comment end.
+            p += 2
+            while(hasMore) {
+                // Update the source location if needed.
+                if(current == '\n') {
+                    nextLine()
+                }
+
+                // Check for nested comments.
+                if(current == '{' && next(1) == '-') {
+                    level++
+                }
+
+                // Check for comment end.
+                if(current == '-' && next(1) == '}') {
+                    level--
+                    if(level == 0) {
+                        p += 2
+                        break
+                    }
+                }
+            }
+
+            if(level != 0) {
+                // p now points to the first character after the comment, or the file end.
+                // Check if the comments were nested correctly.
+                listener.onWarning("Incorrectly nested comment: missing $level comment terminator(s).")
+            }
+
+            token.type = Token.Type.Comment
+            token.kind = Token.Kind.Inactive
+            return true
+        }
+        return false
+    }
+
     /**
      * Increments p until it no longer points to whitespace.
      * Updates the line statistics.
      */
-    private fun skipWhitespace() {
-        loop@ while(hasMore) {
-            // Skip whitespace.
-            if(!whiteChar_UpdateLine()) {
-                // Check for single-line comments.
-                if(current == '-' && next(1) == '-' && !isSymbol(next(2))) {
-                    // Skip the current line.
-                    p += 2
-                    while(hasMore && current != '\n') {
-                        p++
-                    }
+    private fun skipWhitespace(mode: ParseMode): Boolean {
+        while(hasMore) {
+            val hasWhitespace = parseWhitespace()
+            if(hasWhitespace && mode == ParseMode.Full) return true
 
-                    // If this is a newline, we update the location.
-                    // If it is the file end, the caller will take care of it.
-                    if(current == '\n') {
-                        nextLine()
-                        p++
-                        continue@loop
-                    }
-                }
+            val hasComment = parseComment()
+            if(hasComment && mode == ParseMode.Full) return true
 
-                // Check for multi-line comments.
-                else if(current == '{' && next(1) == '-') {
-                    // The current nested comment depth.
-                    var level = 1
-
-                    // Skip until the comment end.
-                    p += 2
-                    while(hasMore) {
-                        // Update the com.youpic.codegen.getSource location if needed.
-                        if(current == '\n') {
-                            nextLine()
-                        }
-
-                        // Check for nested comments.
-                        if(current == '{' && next(1) == '-') {
-                            level++
-                        }
-
-                        // Check for comment end.
-                        if(current == '-' && next(1) == '}') {
-                            level--
-                            if(level == 0) {
-                                p += 2
-                                continue@loop
-                            }
-                        }
-                    }
-
-                    // p now points to the first character after the comment, or the file end.
-                    // Check if the comments were nested correctly.
-                    diagnostics.warning("Incorrectly nested comment: missing $level comment terminator(s).")
-                }
-
-                break
-            }
-
-            // Check the next character.
-            p++
+            if(!hasWhitespace && !hasComment) return false
         }
+
+        return false
     }
 
     /**
@@ -142,7 +173,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 p++
                 if(whiteChar_UpdateLine()) {
                     // This is a gap - we skip characters until the next '\'.
-                    // Update the current com.youpic.codegen.getSource line if needed.
+                    // Update the current source line if needed.
                     p++
                     while(whiteChar_UpdateLine()) {
                         p++
@@ -150,7 +181,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
 
                     if(current != '\\') {
                         // The first character after a gap must be '\'.
-                        diagnostics.warning("Missing gap end in string literal")
+                        listener.onWarning("Missing gap end in string literal")
                     }
 
                     // Continue parsing the string.
@@ -170,7 +201,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                     break
                 } else if(!hasMore || current == '\n') {
                     // If the line ends without terminating the string, we issue a warning.
-                    diagnostics.warning("Missing terminating quote in string literal")
+                    listener.onWarning("Missing terminating quote in string literal")
                     break
                 } else {
                     // Add this UTF-8 character to the string.
@@ -204,10 +235,10 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
         val ch = current
         p++
         if(ch != '\'') {
-            diagnostics.warning("Multi-character character constant")
+            listener.onWarning("Multi-character character constant")
             while (current != '\'') {
                 if(!hasMore || current == '\n') {
-                    diagnostics.warning("Missing terminating ' character in char literal")
+                    listener.onWarning("Missing terminating ' character in char literal")
                     break
                 }
                 p++
@@ -240,7 +271,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             'x' -> {
                 // Hexadecimal literal.
                 if(parseHexit(current) == null) {
-                    diagnostics.error("\\x used with no following hex digits")
+                    listener.onError("\\x used with no following hex digits")
                     return ' '
                 }
                 return parseIntSequence(16, 8).toChar()
@@ -248,7 +279,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             'o' -> {
                 // Octal literal.
                 if(parseOctit(current) == null) {
-                    diagnostics.error("\\o used with no following octal digits")
+                    listener.onError("\\o used with no following octal digits")
                     return ' '
                 }
                 return parseIntSequence(8, 16).toChar()
@@ -257,7 +288,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 if(Character.isDigit(current)) {
                     return parseIntSequence(10, 10).toChar()
                 } else {
-                    diagnostics.warning("Unknown escape sequence '$c'")
+                    listener.onWarning("Unknown escape sequence '$c'")
                     return ' '
                 }
             }
@@ -758,8 +789,6 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
      * If we have reached the end of the file, this will produce EOF tokens indefinitely.
      */
     private fun parseToken() {
-        val b = p
-
         while(true) {
             // This needs to be reset manually.
             qualifier = ""
@@ -767,8 +796,7 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
 
             // Check if we are inside a string literal.
             if(formatState == 3) {
-                token.sourceColumn = (p - l) + tabs * (kTabWidth - 1)
-                token.sourceLine = line
+                startLocation()
                 formatState = 0
 
                 // Since string literals can span multiple lines, this may update mLocation.line.
@@ -777,14 +805,20 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
                 token.idPayload = parseStringLiteral()
 
                 isNewItem = false
-                token.length = (p - b)
+                endLocation()
                 break
             } else {
-                // Skip any whitespace and comments.
-                skipWhitespace()
+                if(mode == ParseMode.Full) {
+                    startLocation()
+                }
 
-                token.sourceColumn = (p - l) + tabs * (kTabWidth - 1)
-                token.sourceLine = line
+                // Skip any whitespace and comments.
+                if(skipWhitespace(mode)) {
+                    endLocation()
+                    break
+                }
+
+                startLocation()
             }
 
             // Check for the end of the file.
@@ -795,16 +829,16 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
             }
 
             // Check if we need to insert a layout token.
-            else if(token.sourceColumn == indentation && !isNewItem) {
+            else if(token.startColumn == indentation && !isNewItem) {
                 token.type = Token.Type.Semicolon
                 token.kind = Token.Kind.Special
                 isNewItem = true
-                token.length = (p - b)
+                endLocation()
                 break
             }
 
             // Check if we need to end a layout block.
-            else if(token.sourceColumn < indentation) {
+            else if(token.startColumn < indentation) {
                 token.type = Token.Type.EndOfBlock
                 token.kind = Token.Kind.Special
             }
@@ -876,15 +910,27 @@ class Lexer(val text: String, var token: Token, val diagnostics: Diagnostics) {
 
             // Unknown token - issue an error and skip it.
             else {
-                diagnostics.warning("Unknown token: '$current'")
+                listener.onWarning("Unknown token: '$current'")
                 p++
                 continue
             }
 
             isNewItem = false
-            token.length = (p - b)
+            endLocation()
             break
         }
+    }
+
+    private fun startLocation() {
+        token.startLine = line
+        token.startColumn = (p - l) + tabs * (kTabWidth - 1)
+        token.startOffset = p
+    }
+
+    private fun endLocation() {
+        token.endLine = line
+        token.endColumn = (p - l) + tabs * (kTabWidth - 1)
+        token.startOffset = p
     }
 
     companion object {
