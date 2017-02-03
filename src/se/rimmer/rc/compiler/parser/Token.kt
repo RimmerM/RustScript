@@ -87,12 +87,21 @@ class Token {
         Inactive
     }
 
+    // The token position including any whitespace preceding it.
+    var whitespaceLine = 0
+    var whitespaceColumn = 0
+    var whitespaceOffset = 0
+
+    // The starting position of the actual token data.
     var startLine = 0
-    var endLine = 0
     var startColumn = 0
-    var endColumn = 0
     var startOffset = 0
+
+    // The end position of the actual token data.
+    var endLine = 0
+    var endColumn = 0
     var endOffset = 0
+
     var type = Type.EndOfFile
     var kind = Kind.Special
 

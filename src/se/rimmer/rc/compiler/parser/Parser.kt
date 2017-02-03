@@ -236,33 +236,37 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
         var b = node {parseBaseExpr()}
         while(true) {
             if(token.type == Token.Type.ParenL) {
-                val args = parens { sepBy(Token.Type.Comma) { parseTypedExpr() } }
-                b = AppExpr(b, args)
+                val args = parens { sepBy(Token.Type.Comma) { node {parseTypedExpr()} } }
+                b = Node(AppExpr(b, args), b.location)
             } else if(token.type == Token.Type.opDot) {
                 eat()
-                val app = parseSelExpr()
-                b = FieldExpr(b, app)
+                val app = node {parseSelExpr()}
+                val location = SourceLocation(
+                    b.location.startLine, app.location.endLine, b.location.startColumn,
+                    app.location.endColumn, b.location.startOffset, app.location.endOffset
+                )
+                b = Node(FieldExpr(b, app), location)
             } else {
                 break
             }
         }
-        return b
+        return b.ast
     }
 
     fun parseBaseExpr(): Expr {
         if(token.type == Token.Type.BraceL) {
             return parseTupExpr()
         } else if(token.type == Token.Type.ConID) {
-            val id = parseQualified()
-            if(id.isVar) {
-                return VarExpr(id)
+            val id = node {parseQualified()}
+            if(id.ast.isVar) {
+                return VarExpr(id.ast)
             } else {
-                val type = ConType(id)
+                val type = Node(ConType(id.ast), id.location)
                 if(token.type == Token.Type.ParenL) {
-                    val args = parens { sepBy1(Token.Type.Comma) { parseTypedExpr() } }
+                    val args = parens { sepBy1(Token.Type.Comma) { node {parseTypedExpr()} } }
                     return ConstructExpr(type, args)
                 } else if(token.type == Token.Type.BraceL) {
-                    return ConstructExpr(type, listOf(parseTupExpr()))
+                    return ConstructExpr(type, listOf(node {parseTupExpr()}))
                 } else {
                     return ConstructExpr(type, emptyList())
                 }
@@ -273,10 +277,10 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             if(token.type == Token.Type.ParenR) {
                 eat()
                 expect(Token.Type.opArrowD, true)
-                return FunExpr(emptyList(), parseExpr())
+                return FunExpr(emptyList(), node {parseExpr()})
             }
 
-            val e = parseTypedExpr()
+            val e = node {parseTypedExpr()}
 
             // Find out if this is a parenthesized or function expression.
             // a comma or `) =>` indicates a function, anything else is either an error or an expression.
@@ -287,10 +291,10 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
                 }
             }
 
-            val firstArg = if(e is VarExpr && e.name.qualifier.isEmpty()) {
-                Arg(e.name.name, null)
-            } else if(e is CoerceExpr && e.target is VarExpr && e.target.name.qualifier.isEmpty()) {
-                Arg(e.target.name.name, e.type)
+            val firstArg = if(e.ast is VarExpr && e.ast.name.qualifier.isEmpty()) {
+                Arg(e.ast.name.name, null)
+            } else if(e.ast is CoerceExpr && e.ast.target.ast is VarExpr && e.ast.target.ast.name.qualifier.isEmpty()) {
+                Arg(e.ast.target.ast.name.name, e.ast.type)
             } else {
                 throw ParseError("Expected ')' or a function argument")
             }
@@ -308,7 +312,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
                 throw ParseError("Expected ')' or a function expression")
             }
 
-            return FunExpr(args, parseExpr())
+            return FunExpr(args, node {parseExpr()})
         } else {
             return parseSelExpr()
         }
@@ -326,7 +330,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             eat()
             return VarExpr(Qualified(id, emptyList(), true))
         } else if(token.type == Token.Type.ParenL) {
-            return NestedExpr(parens { parseTypedExpr() })
+            return NestedExpr(parens { node {parseTypedExpr()} })
         } else {
             throw ParseError("Expected an expression")
         }
@@ -334,9 +338,9 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
 
     fun parseVarDecl(mutable: Boolean): Expr {
         val list = withLevel {
-            sepBy1(Token.Type.Semicolon) { parseDeclExpr(mutable) }
+            sepBy1(Token.Type.Semicolon) { node {parseDeclExpr(mutable)} }
         }
-        return if(list.size == 1) list[0] else MultiExpr(list)
+        return if(list.size == 1) list[0].ast else MultiExpr(list)
     }
 
     fun parseDeclExpr(mutable: Boolean): Expr {
@@ -346,7 +350,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
 
         if(token.type == Token.Type.opEquals) {
             eat()
-            return DeclExpr(id, parseExpr(), mutable)
+            return DeclExpr(id, node {parseExpr()}, mutable)
         } else {
             return DeclExpr(id, null, mutable)
         }
@@ -452,13 +456,12 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             val list = between(Token.Type.BraceL, Token.Type.BraceR) {
                 sepBy1(Token.Type.Comma) {
                     if(token.type == Token.Type.VarID) {
-                        val id = token.idPayload
-                        eat()
+                        val id = node {token.idPayload.apply { eat() }}
                         if(token.type == Token.Type.opEquals) {
                             eat()
-                            PatternField(id, node {parsePat()})
+                            PatternField(id.ast, node {parsePat()})
                         } else {
-                            PatternField(null, VarPat(id))
+                            PatternField(null, Node(VarPat(id.ast), id.location))
                         }
                     } else {
                         PatternField(null, node {parsePat()})
@@ -483,10 +486,10 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
 
     fun parseAType(): Type {
         if(token.type == Token.Type.ConID) {
-            val base = ConType(parseQualified())
-            val app = maybeParens { sepBy1(Token.Type.Comma) { parseType() } }
+            val base = node {ConType(parseQualified())}
+            val app = maybeParens { sepBy1(Token.Type.Comma) { node {parseType()} } }
             if(app == null) {
-                return base
+                return base.ast
             } else {
                 return AppType(base, app)
             }
@@ -500,10 +503,10 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
             return parseTupleType()
         } else if(token.type == Token.Type.BracketL) {
             eat()
-            val from = parseType()
+            val from = node {parseType()}
             if(token.type == Token.Type.opArrowD) {
                 eat()
-                val to = parseType()
+                val to = node {parseType()}
                 return MapType(from, to)
             } else {
                 return ArrayType(from)
@@ -521,12 +524,12 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
                     eat()
                     if(token.type == Token.Type.opColon) {
                         eat()
-                        TupField(parseType(), name)
+                        TupField(node {parseType()}, name)
                     } else {
-                        TupField(GenType(name), null)
+                        TupField(node {GenType(name)}, null)
                     }
                 } else {
-                    TupField(parseType(), null)
+                    TupField(node {parseType()}, null)
                 }
             }
         }
@@ -559,7 +562,7 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
         val name = parseVarID()
         if(requireType || token.type == Token.Type.opColon) {
             expect(Token.Type.opColon, true)
-            return Arg(name, parseType())
+            return Arg(name, node {parseType()})
         } else {
             return Arg(name, null)
         }
@@ -572,10 +575,10 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
                 expect(Token.Type.opColon, true)
                 return ArgDecl(name.ast, node {parseType()})
             } else {
-                return ArgDecl(null, GenType(name))
+                return ArgDecl(null, Node(GenType(name.ast), name.location))
             }
         } else {
-            return ArgDecl(null, parseType())
+            return ArgDecl(null, node {parseType()})
         }
     }
 

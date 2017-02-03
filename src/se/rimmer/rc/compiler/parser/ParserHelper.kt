@@ -6,12 +6,16 @@ import java.util.*
 open class Parser(text: String, diagnostics: Diagnostics) {
     inner class ParseError(text: String): Exception("line ${token.startLine}, column ${token.startColumn}: $text")
 
-    fun <T> node(f: () -> T): Node<T> {
+    inline fun <T> node(f: () -> T): Node<T> {
         val startLine = token.startLine
         val startColumn = token.startColumn
         val startOffset = token.startOffset
         val result = f()
-        return Node(result, SourceLocation(startLine, lexer.line, startColumn, lexer.p - lexer.l, startOffset, lexer.p))
+        val endLine = token.whitespaceLine
+        val endColumn = token.whitespaceColumn
+        val endOffset = token.whitespaceOffset
+
+        return Node(result, SourceLocation(startLine, endLine, startColumn, endColumn, startOffset, endOffset))
     }
 
     fun <T> withLevel(f: () -> T): T {

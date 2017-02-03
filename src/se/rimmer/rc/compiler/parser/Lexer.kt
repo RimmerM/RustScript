@@ -575,7 +575,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             token.singleMinus = count == 1 && text[start] == '-'
 
             // Convert to UTF-32 and save in the current qualified name..
-            qualifier = text.substring(start, start + count)
+            token.idPayload = text.substring(start, start + count)
         } else {
             // Skip to the next token.
             if(sym1) p += 2
@@ -608,17 +608,17 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
         } else if(ch == '≤') {
             token.type = Token.Type.VarSym
             token.kind = Token.Kind.Identifier
-            qualifier = "<="
+            token.idPayload = "<="
             handled = true
         } else if(ch == '≥') {
             token.type = Token.Type.VarSym
             token.kind = Token.Kind.Identifier
-            qualifier = ">="
+            token.idPayload = ">="
             handled = true
         } else if(ch == '≠') {
             token.type = Token.Type.VarSym
             token.kind = Token.Kind.Identifier
-            qualifier = "!="
+            token.idPayload = "!="
             handled = true
         }
 
@@ -653,7 +653,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
     /**
      * Parses a qualified id (qVarID, qConID, qVarSym, qConSym) or constructor.
      */
-    private fun parseQualifier() {
+    private fun parseConID() {
         val start = p
         var length = 1
         token.kind = Token.Kind.Identifier
@@ -664,7 +664,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
         val str = text.substring(start, start + length)
 
         // We have a ConID.
-        qualifier = str
+        token.idPayload = str
     }
 
     /**
@@ -780,7 +780,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             p++
         }
 
-        qualifier = text.substring(start, start + length)
+        token.idPayload = text.substring(start, start + length)
     }
 
     /**
@@ -791,8 +791,9 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
     private fun parseToken() {
         while(true) {
             // This needs to be reset manually.
-            qualifier = ""
             token.singleMinus = false
+
+            startWhitespace()
 
             // Check if we are inside a string literal.
             if(formatState == 3) {
@@ -887,25 +888,19 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             // Parse symbols.
             else if(isSymbol(current)) {
                 parseSymbol()
-                token.idPayload = qualifier
             }
 
             // Parse special unicode symbols.
-            else if(parseUniSymbol()) {
-                if(token.kind == Token.Kind.Identifier)
-                    token.idPayload = qualifier
-            }
+            else if(parseUniSymbol()) {}
 
             // Parse ConIDs
             else if(Character.isUpperCase(current)) {
-                parseQualifier()
-                token.idPayload = qualifier
+                parseConID()
             }
 
             // Parse variables and reserved ids.
             else if(Character.isLowerCase(current) || current == '_') {
                 parseVariable()
-                token.idPayload = qualifier
             }
 
             // Unknown token - issue an error and skip it.
@@ -927,6 +922,12 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
         token.startOffset = p
     }
 
+    private fun startWhitespace() {
+        token.whitespaceLine = line
+        token.whitespaceColumn = (p - l) + tabs * (kTabWidth - 1)
+        token.whitespaceOffset = p
+    }
+
     private fun endLocation() {
         token.endLine = line
         token.endColumn = (p - l) + tabs * (kTabWidth - 1)
@@ -943,7 +944,6 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
     var blockCount = 0 // The current number of indentation blocks.
     var p = 0 // The current source pointer.
     var l = 0 // The first character of the current line.
-    var qualifier = "" // The current qualified name being built up.
     var line = 0 // The current source line.
     var tabs = 0 // The number of tabs processed on the current line.
     var isNewItem = false // Indicates that a new item was started by the previous token.
