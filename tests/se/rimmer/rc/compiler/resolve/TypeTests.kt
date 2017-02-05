@@ -1,8 +1,9 @@
-package se.rimmer.rc.compiler.parser
+package se.rimmer.rc.compiler.resolve
 
 import org.junit.Assert
 import org.junit.Test
-import se.rimmer.rc.compiler.resolve.*
+import se.rimmer.rc.compiler.parser.*
+import se.rimmer.rc.compiler.parser.Module
 
 class ResolveTypeTest {
     @Test
