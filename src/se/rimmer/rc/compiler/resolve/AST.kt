@@ -149,6 +149,9 @@ open class Value(val block: Block, val name: String?, val type: Type) {
 
     // Each block this value is used by.
     val blockUses: MutableSet<Block> = Collections.newSetFromMap(IdentityHashMap<Block, Boolean>())
+
+    // Data for use by the code generator.
+    var codegen: Any? = null
 }
 
 // An immediate value that can be used by instructions.
@@ -180,10 +183,10 @@ class CastPrimInst(block: Block, name: String?, type: Type, val source: Value): 
 
 /* Record value instructions. */
 class GetFieldInst(block: Block, name: String?, type: Type, val from: Value, val field: Int): Inst(block, name, type, listOf(from))
-class UpdateFieldInst(block: Block, name: String?, val value: Value, val from: Value, val field: Int): Inst(block, name, from.type, listOf(value, from))
+class UpdateFieldInst(block: Block, name: String?, val from: Value, val updates: List<Pair<Int, Value>>): Inst(block, name, from.type, updates.map {it.second} + from)
 
 /* Control flow. */
 class IfInst(block: Block, name: String?, val condition: Value, val then: Block, val otherwise: Block): Inst(block, name, unitType, listOf(condition))
-class BranchInst(block: Block, name: String?, val to: Block): Inst(block, name, unitType, emptyList())
+class BrInst(block: Block, name: String?, val to: Block): Inst(block, name, unitType, emptyList())
 class RetInst(block: Block, val value: Value): Inst(block, null, value.type, listOf(value))
 class PhiInst(block: Block, name: String?, type: Type, val values: List<Pair<Value, Block>>): Inst(block, name, type, values.map { it.first })

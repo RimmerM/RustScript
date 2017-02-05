@@ -720,12 +720,9 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             'i' -> {
                 if(text.length > c && text[c] == 'f') { c++; token.type = Token.Type.kwIf }
                 else if(compare("mport")) token.type = Token.Type.kwImport
-                else if(text.length > c + 1 && text[c] == 'n' && !isIdentifier(text[c + 1])) { c++; token.type = Token.Type.kwIn }
-                else if(compare("nfix")) {
-                    if(text.length > c && text[c] == 'l') { c++; token.type = Token.Type.kwInfixL }
-                    else if(text.length > c && text[c] == 'r') { c++; token.type = Token.Type.kwInfixR }
-                    else token.type = Token.Type.kwInfix
-                } else if(compare("nstance")) token.type = Token.Type.kwInstance
+                else if(compare("nfixl")) token.type = Token.Type.kwInfixL
+                else if(compare("nfixr")) token.type = Token.Type.kwInfixR
+                else if(compare("nstance")) token.type = Token.Type.kwInstance
             }
             'l' -> {
                 if(text.length > c + 1 && text[c] == 'e' && text[c+1] == 't') { c += 2; token.type = Token.Type.kwLet }
@@ -733,15 +730,13 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             'm' -> {
                 if(compare("odule")) token.type = Token.Type.kwModule
                 else if(compare("atch")) token.type = Token.Type.kwMatch
+                else if(compare("ut")) token.type = Token.Type.kwMut
             }
             'n' -> {
                 if(compare("ewtype")) token.type = Token.Type.kwNewType
             }
-            'o' -> {
-                if(text.length > c && text[c] == 'f') { c++; token.type = Token.Type.kwOf }
-            }
             'p' -> {
-                if(compare("refix")) token.type = Token.Type.kwPrefix
+                if(compare("ub")) token.type = Token.Type.kwPub
             }
             'r' -> {
                 if(compare("eturn")) token.type = Token.Type.kwReturn
@@ -749,9 +744,6 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             't' -> {
                 if(compare("hen")) token.type = Token.Type.kwThen
                 else if(compare("ype")) token.type = Token.Type.kwType
-            }
-            'v' -> {
-                if(text.length > c + 1 && text[c] == 'a' && text[c+1] == 'r') { c += 2; token.type = Token.Type.kwVar }
             }
             'w' -> {
                 if(compare("here")) token.type = Token.Type.kwWhere

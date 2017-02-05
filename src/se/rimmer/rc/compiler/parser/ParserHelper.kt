@@ -38,8 +38,13 @@ open class Parser(text: String, diagnostics: Diagnostics) {
 
     fun <T> between(start: Token.Type, end: Token.Type, f: () -> T) = between({expect(start, true)}, {expect(end, true)}, f)
     fun <T> maybeBetween(start: Token.Type, end: Token.Type, f: () -> T) = if(token.type == start) between(start, end, f) else null
+
     fun <T> parens(f: () -> T) = between(Token.Type.ParenL, Token.Type.ParenR, f)
     fun <T> maybeParens(f: () -> T) = maybeBetween(Token.Type.ParenL, Token.Type.ParenR, f)
+    fun <T> braces(f: () -> T) = between(Token.Type.BraceL, Token.Type.BraceR, f)
+    fun <T> maybeBraces(f: () -> T) = maybeBetween(Token.Type.BraceL, Token.Type.BraceR, f)
+    fun <T> brackets(f: () -> T) = between(Token.Type.BracketL, Token.Type.BracketR, f)
+    fun <T> maybeBrackets(f: () -> T) = maybeBetween(Token.Type.BracketL, Token.Type.BracketR, f)
 
     /** Parses one or more items from the provided parser. */
     fun <T> many1(f: () -> T): List<T> {

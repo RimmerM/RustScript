@@ -17,7 +17,7 @@ data class Node<out T>(val ast: T, val location: SourceLocation)
 
 class Module(val name: Qualified) {
     val imports = ArrayList<Node<Import>>()
-    val decls = ArrayList<Node<Decl>>()
+    val decls = ArrayList<TopDecl>()
     val ops = HashMap<String, Node<Fixity>>()
     val exports = ArrayList<Node<Export>>()
 }
@@ -66,7 +66,7 @@ data class ArrayType(val type: TypeNode): Type
 data class MapType(val from: TypeNode, val to: TypeNode): Type
 
 data class SimpleType(val name: String, val kind: List<String>)
-data class TupField(val type: TypeNode, val name: String?)
+data class TupField(val type: TypeNode, val name: String?, val mutable: Boolean)
 
 interface Expr
 typealias ExprNode = Node<Expr>
@@ -74,6 +74,7 @@ typealias ExprNode = Node<Expr>
 data class LitExpr(val literal: Literal): Expr
 data class NestedExpr(val expr: ExprNode): Expr
 data class MultiExpr(val list: List<ExprNode>): Expr
+data class PostExpr(val list: List<ExprNode>): Expr
 data class VarExpr(val name: Qualified): Expr
 data class AppExpr(val callee: ExprNode, val args: List<ExprNode>): Expr
 data class InfixExpr(val op: String, var lhs: ExprNode, var rhs: ExprNode): Expr {var ordered = false}
@@ -110,12 +111,13 @@ data class Alt(val pat: PatNode, val alias: String?, val body: ExprNode)
 
 interface Decl
 typealias DeclNode = Node<Decl>
+class TopDecl(val decl: DeclNode, val export: Boolean)
 
 data class FunDecl(val name: String, val args: List<Arg>, val ret: TypeNode?, val body: ExprNode): Decl
 data class TypeDecl(val type: SimpleType, val target: TypeNode): Decl
 data class DataDecl(val type: SimpleType, val cons: List<Node<Constructor>>): Decl
 data class ClassDecl(val type: SimpleType, val decls: List<DeclNode>): Decl
-data class InstanceDecl(val type: SimpleType, val classType: SimpleType?, val decls: List<DeclNode>): Decl
+data class InstanceDecl(val type: SimpleType, val decls: List<DeclNode>): Decl
 data class ForeignDecl(val externalName: String, val internalName: String, val from: String?, val type: TypeNode): Decl
 
 data class Constructor(val name: String, val content: TypeNode?)

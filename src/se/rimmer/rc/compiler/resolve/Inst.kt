@@ -5,7 +5,7 @@ import se.rimmer.rc.compiler.parser.Qualified
 val Inst.isTerminating: Boolean get() = when(this) {
     is RetInst -> true
     is IfInst -> true
-    is BranchInst -> true
+    is BrInst -> true
     else -> false
 }
 
@@ -53,7 +53,7 @@ private inline fun Block.inst(f: Block.() -> Inst): Inst {
             outgoing.add(inst.otherwise)
             inst.then.incoming.add(this)
             inst.otherwise.incoming.add(this)
-        } else if(inst is BranchInst) {
+        } else if(inst is BrInst) {
             outgoing.add(inst.to)
             inst.to.incoming.add(this)
         }
@@ -94,7 +94,7 @@ fun Block.`if`(condition: Value, then: Block, otherwise: Block) = inst {
 }
 
 fun Block.br(to: Block) = inst {
-    BranchInst(this, null, to)
+    BrInst(this, null, to)
 }
 
 fun Block.phi(name: String?, type: Type, alts: List<Pair<Value, Block>>) = inst {
