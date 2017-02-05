@@ -128,4 +128,6 @@ class Token {
         t.singleMinus = singleMinus
         return t
     }
+
+    fun location() = SourceLocation(startLine, endLine, startColumn, endColumn, startOffset, endOffset)
 }

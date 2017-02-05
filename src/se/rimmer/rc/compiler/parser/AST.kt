@@ -26,8 +26,8 @@ data class Import(
     val source: Qualified,
     val qualified: Boolean,
     val localName: String,
-    val include: List<String>,
-    val exclude: List<String>
+    val include: List<String>?,
+    val exclude: List<String>?
 )
 
 data class Export(val name: Qualified, val qualified: Boolean, val exportName: String)
@@ -76,7 +76,7 @@ data class NestedExpr(val expr: ExprNode): Expr
 data class MultiExpr(val list: List<ExprNode>): Expr
 data class PostExpr(val list: List<ExprNode>): Expr
 data class VarExpr(val name: Qualified): Expr
-data class AppExpr(val callee: ExprNode, val args: List<ExprNode>): Expr
+data class AppExpr(val callee: ExprNode, val args: List<TupArg>): Expr
 data class InfixExpr(val op: String, var lhs: ExprNode, var rhs: ExprNode): Expr {var ordered = false}
 data class PrefixExpr(val op: String, val arg: ExprNode): Expr
 data class IfExpr(val cond: ExprNode, val then: ExprNode, val otherwise: ExprNode?): Expr
@@ -95,7 +95,7 @@ data class ReturnExpr(val expr: ExprNode): Expr
 
 data class IfCase(val cond: ExprNode, val then: ExprNode)
 data class FormatChunk(val text: String, val format: Expr?)
-data class TupArg(val name: String?, val content: Expr)
+data class TupArg(val name: String?, val content: ExprNode)
 
 interface Pat
 typealias PatNode = Node<Pat>
@@ -121,5 +121,5 @@ data class InstanceDecl(val type: SimpleType, val decls: List<DeclNode>): Decl
 data class ForeignDecl(val externalName: String, val internalName: String, val from: String?, val type: TypeNode): Decl
 
 data class Constructor(val name: String, val content: TypeNode?)
-data class Arg(val name: String, val type: TypeNode?)
+data class Arg(val name: String, val type: TypeNode?, val default: ExprNode?)
 data class ArgDecl(val name: String?, val type: TypeNode)
