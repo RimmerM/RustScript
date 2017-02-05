@@ -34,10 +34,6 @@ class ScopeGen {
 
 class FunLocalGen(val mangledName: String)
 
-val Var.gen: VarGen get() = codegen as VarGen
-val Scope.gen: ScopeGen get() = codegen as ScopeGen
-val LocalFunction.gen: FunLocalGen get() = codegen as FunLocalGen
-
 class Generator(writer: Writer, val options: GenOptions) {
     val b = CodeBuilder(writer, options.minify)
 
