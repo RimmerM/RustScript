@@ -25,6 +25,8 @@ fun testExprs(tests: Array<out Pair<String, Expr>>) {
 
 fun q(name: String) = Qualified(name, emptyList(), name.firstOrNull()?.isLowerCase() ?: false)
 fun v(name: String) = VarExpr(q(name))
+fun l(length: Int, offset: Int = 0) = SourceLocation(0, 0, offset, offset + length, offset, offset + length)
+fun <T> n(it: T, length: Int, offset: Int = 0) = Node(it, l(length, offset))
 
 val selExprTests = arrayOf(
     /* Literals */
@@ -41,17 +43,17 @@ val selExprTests = arrayOf(
 
     /* Other cases */
     "my_variable" to v("my_variable"),
-    "(v)" to NestedExpr(v("v"))
+    "(v)" to NestedExpr(n(v("v"), 1, 1))
 )
 
 val baseExprTests = arrayOf(
-    "{0, x}" to TupExpr(listOf(TupArg(null, LitExpr(IntLiteral(BigInteger.valueOf(0)))), TupArg(null, v("x")))),
-    "{x = 0, y = x}" to TupExpr(listOf(TupArg("x", LitExpr(IntLiteral(BigInteger.valueOf(0)))), TupArg("y", v("x")))),
-    "Vector" to ConstructExpr(ConType(q("Vector")), emptyList()),
-    "Vector(a, b)" to ConstructExpr(ConType(q("Vector")), listOf(v("a"), v("b"))),
-    "Vector {x = a, y = b}" to ConstructExpr(ConType(q("Vector")), listOf(TupExpr(listOf(TupArg("x", v("a")), TupArg("y", v("b")))))),
-    "() => x" to FunExpr(emptyList(), v("x")),
-    "(a, b) => x" to FunExpr(listOf(Arg("a", null), Arg("b", null)), v("x")),
+    "{0, x}" to TupExpr(listOf(TupArg(null, n(LitExpr(IntLiteral(BigInteger.valueOf(0))), 1, 1)), TupArg(null, n(v("x"), 1, 4)))),
+    "{x = 0, y = x}" to TupExpr(listOf(TupArg("x", n(LitExpr(IntLiteral(BigInteger.valueOf(0))), 1, 5)), TupArg("y", n(v("x"), 1, 12)))),
+    "Vector" to ConstructExpr(n(ConType(q("Vector")), 6), emptyList()),
+    "Vector(a, b)" to ConstructExpr(n(ConType(q("Vector")), 6), listOf(n(v("a"), 1, 7), n(v("b"), 1, 9))),
+    "Vector {x = a, y = b}" to ConstructExpr(n(ConType(q("Vector")), 6), listOf(TupExpr(listOf(TupArg("x", v("a")), TupArg("y", v("b")))))),
+    "() => x" to FunExpr(emptyList(), n(v("x"), 1, 6)),
+    "(a, b) => x" to FunExpr(listOf(Arg("a", null, null), Arg("b", null, null)), n(v("x"), 1, 10)),
     "(a: Int, b: Int) => x" to FunExpr(listOf(Arg("a", ConType(q("Int"))), Arg("b", ConType(q("Int")))), v("x"))
 )
 
