@@ -129,5 +129,5 @@ class Token {
         return t
     }
 
-    fun location() = SourceLocation(startLine, endLine, startColumn, endColumn, startOffset, endOffset)
+    fun location(module: Qualified) = Node(module, Loc(startLine, startColumn, startOffset), Loc(endLine, endColumn, endOffset))
 }

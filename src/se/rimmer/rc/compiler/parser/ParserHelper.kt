@@ -1,21 +1,23 @@
 package se.rimmer.rc.compiler.parser
 
-import se.rimmer.rc.compiler.Diagnostics
 import java.util.*
 
-open class Parser(text: String, listener: LexerListener) {
+open class Parser(val module: Qualified, text: String, listener: LexerListener) {
     inner class ParseError(text: String): Exception("line ${token.startLine}, column ${token.startColumn}: $text")
 
-    inline fun <T> node(f: () -> T): Node<T> {
+    inline fun <T: Node> node(f: () -> T): T {
         val startLine = token.startLine
         val startColumn = token.startColumn
         val startOffset = token.startOffset
         val result = f()
-        val endLine = token.whitespaceLine
-        val endColumn = token.whitespaceColumn
-        val endOffset = token.whitespaceOffset
-
-        return Node(result, SourceLocation(startLine, endLine, startColumn, endColumn, startOffset, endOffset))
+        result.sourceModule = module
+        result.sourceStart.line = startLine
+        result.sourceStart.column = startColumn
+        result.sourceStart.offset = startOffset
+        result.sourceEnd.line = token.whitespaceLine
+        result.sourceEnd.column = token.whitespaceColumn
+        result.sourceEnd.offset = token.whitespaceOffset
+        return result
     }
 
     fun <T> withLevel(f: () -> T): T {
@@ -176,7 +178,7 @@ open class Parser(text: String, listener: LexerListener) {
     fun eat() = lexer.next()
 
     var token = Token()
-    val lexer = Lexer(text, token, ParseMode.Active, listener)
+    val lexer = Lexer(module, text, token, ParseMode.Active, listener)
     var lastError: ParseError? = null
 
     init {

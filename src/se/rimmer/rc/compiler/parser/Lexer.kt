@@ -1,8 +1,8 @@
 package se.rimmer.rc.compiler.parser
 
 interface LexerListener {
-    fun onWarning(location: SourceLocation, warning: String) {}
-    fun onError(location: SourceLocation, error: String) {}
+    fun onWarning(location: Node, warning: String) {}
+    fun onError(location: Node, error: String) {}
     fun onToken(token: Token) {}
 }
 
@@ -14,7 +14,7 @@ enum class ParseMode {
     Active
 }
 
-class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val listener: LexerListener) {
+class Lexer(val module: Qualified, val text: CharSequence, var token: Token, val mode: ParseMode, val listener: LexerListener) {
     /**
      * Returns the next token from the stream.
      * On the next call to Next(), the returned token is overwritten with the data from that call.
@@ -31,9 +31,9 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
     private fun next(index: Int) = text[p + index]
 
     private fun offsetLocation(offset: Int) = if(offset < 0) {
-        SourceLocation(line, line, (p - l) + offset, p - l, p + offset, p)
+        Node(module, Loc(line, (p - l) + offset, p + offset), Loc(line, p - l, p))
     } else {
-        SourceLocation(line, line, p - l, (p - l) + offset, p, p + offset)
+        Node(module, Loc(line, p - l, p), Loc(line, (p - l) + offset, p + offset))
     }
 
     private fun parseWhitespace(): Boolean {
@@ -99,14 +99,10 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             if(level != 0) {
                 // p now points to the first character after the comment, or the file end.
                 // Check if the comments were nested correctly.
-                listener.onWarning(SourceLocation(
-                    token.whitespaceLine,
-                    line,
-                    token.whitespaceColumn,
-                    p - l,
-                    token.whitespaceOffset,
-                    p
-                ), "Incorrectly nested comment: missing $level comment terminator(s).")
+                listener.onWarning(
+                    Node(module, Loc(token.whitespaceLine, token.whitespaceColumn, token.whitespaceOffset), Loc(line, p - l, p)),
+                    "Incorrectly nested comment: missing $level comment terminator(s)."
+                )
             }
 
             token.type = Token.Type.Comment
@@ -203,7 +199,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
                     if(current != '\\') {
                         // The first character after a gap must be '\'.
                         listener.onWarning(
-                            SourceLocation(gapLine, line, gapColumn, p - l, gapOffset, p),
+                            Node(module, Loc(gapLine, gapColumn, gapOffset), Loc(line, p - l, p)),
                             "Missing gap end in string literal"
                         )
                     }
@@ -226,7 +222,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
                 } else if(!hasMore || current == '\n') {
                     // If the line ends without terminating the string, we issue a warning.
                     listener.onWarning(
-                        SourceLocation(stringLine, line, stringColumn, p - l, stringOffset, p),
+                        Node(module, Loc(stringLine, stringColumn, stringOffset), Loc(line, p - l, p)),
                         "Missing terminating quote in string literal"
                     )
                     break
