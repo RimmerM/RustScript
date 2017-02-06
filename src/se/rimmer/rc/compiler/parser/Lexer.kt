@@ -1,8 +1,8 @@
 package se.rimmer.rc.compiler.parser
 
 interface LexerListener {
-    fun onWarning(warning: String) {}
-    fun onError(error: String) {}
+    fun onWarning(location: SourceLocation, warning: String) {}
+    fun onError(location: SourceLocation, error: String) {}
     fun onToken(token: Token) {}
 }
 
@@ -29,6 +29,12 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
     private val current: Char get() = text[p]
     private fun hasMore(index: Int) = p + index < text.length
     private fun next(index: Int) = text[p + index]
+
+    private fun offsetLocation(offset: Int) = if(offset < 0) {
+        SourceLocation(line, line, (p - l) + offset, p - l, p + offset, p)
+    } else {
+        SourceLocation(line, line, p - l, (p - l) + offset, p, p + offset)
+    }
 
     private fun parseWhitespace(): Boolean {
         val start = p
@@ -93,7 +99,14 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             if(level != 0) {
                 // p now points to the first character after the comment, or the file end.
                 // Check if the comments were nested correctly.
-                listener.onWarning("Incorrectly nested comment: missing $level comment terminator(s).")
+                listener.onWarning(SourceLocation(
+                    token.whitespaceLine,
+                    line,
+                    token.whitespaceColumn,
+                    p - l,
+                    token.whitespaceOffset,
+                    p
+                ), "Incorrectly nested comment: missing $level comment terminator(s).")
             }
 
             token.type = Token.Type.Comment
@@ -166,9 +179,17 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
      */
     private fun parseStringLiteral(): String {
         val builder = StringBuilder()
+        val stringLine = line
+        val stringColumn = p - l
+        val stringOffset = p
+
         p++
         while(true) {
             if(current == '\\') {
+                val gapLine = line
+                val gapColumn = p - l
+                val gapOffset = p
+
                 // This is an escape sequence or gap.
                 p++
                 if(whiteChar_UpdateLine()) {
@@ -181,7 +202,10 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
 
                     if(current != '\\') {
                         // The first character after a gap must be '\'.
-                        listener.onWarning("Missing gap end in string literal")
+                        listener.onWarning(
+                            SourceLocation(gapLine, line, gapColumn, p - l, gapOffset, p),
+                            "Missing gap end in string literal"
+                        )
                     }
 
                     // Continue parsing the string.
@@ -201,7 +225,10 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
                     break
                 } else if(!hasMore || current == '\n') {
                     // If the line ends without terminating the string, we issue a warning.
-                    listener.onWarning("Missing terminating quote in string literal")
+                    listener.onWarning(
+                        SourceLocation(stringLine, line, stringColumn, p - l, stringOffset, p),
+                        "Missing terminating quote in string literal"
+                    )
                     break
                 } else {
                     // Add this UTF-8 character to the string.
@@ -218,6 +245,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
      * If the literal is invalid, warnings are generated and ' ' is returned.
      */
     private fun parseCharLiteral(): Char {
+        val start = p
         p++
         val c: Char
 
@@ -235,10 +263,10 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
         val ch = current
         p++
         if(ch != '\'') {
-            listener.onWarning("Multi-character character constant")
-            while (current != '\'') {
+            listener.onWarning(offsetLocation(start - p), "Multi-character character constant")
+            while(current != '\'') {
                 if(!hasMore || current == '\n') {
-                    listener.onWarning("Missing terminating ' character in char literal")
+                    listener.onWarning(offsetLocation(start - p), "Missing terminating ' character in char literal")
                     break
                 }
                 p++
@@ -271,7 +299,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             'x' -> {
                 // Hexadecimal literal.
                 if(parseHexit(current) == null) {
-                    listener.onError("\\x used with no following hex digits")
+                    listener.onError(offsetLocation(-2), "\\x used with no following hex digits")
                     return ' '
                 }
                 return parseIntSequence(16, 8).toChar()
@@ -279,7 +307,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
             'o' -> {
                 // Octal literal.
                 if(parseOctit(current) == null) {
-                    listener.onError("\\o used with no following octal digits")
+                    listener.onError(offsetLocation(-2), "\\o used with no following octal digits")
                     return ' '
                 }
                 return parseIntSequence(8, 16).toChar()
@@ -288,7 +316,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
                 if(Character.isDigit(current)) {
                     return parseIntSequence(10, 10).toChar()
                 } else {
-                    listener.onWarning("Unknown escape sequence '$c'")
+                    listener.onWarning(offsetLocation(-2), "Unknown escape sequence '$c'")
                     return ' '
                 }
             }
@@ -897,7 +925,7 @@ class Lexer(val text: CharSequence, var token: Token, val mode: ParseMode, val l
 
             // Unknown token - issue an error and skip it.
             else {
-                listener.onWarning("Unknown token: '$current'")
+                listener.onWarning(offsetLocation(1), "Unknown token: '$current'")
                 p++
                 continue
             }
