@@ -32,8 +32,8 @@ data class Import(
 
 data class Export(val name: Qualified, val qualified: Boolean, val exportName: String)
 
-enum class FixityKind { Left, Right, Prefix }
-data class Fixity(val kind: FixityKind, val precedence: Int)
+enum class FixityKind { Left, Right }
+data class Fixity(val op: String, val kind: FixityKind, val precedence: Int)
 
 data class Qualified(val name: String, val qualifier: List<String>, val isVar: Boolean) {
     override fun toString() = qualifier.joinToString(".") + '.' + name
@@ -74,7 +74,6 @@ typealias ExprNode = Node<Expr>
 data class LitExpr(val literal: Literal): Expr
 data class NestedExpr(val expr: ExprNode): Expr
 data class MultiExpr(val list: List<ExprNode>): Expr
-data class PostExpr(val list: List<ExprNode>): Expr
 data class VarExpr(val name: Qualified): Expr
 data class AppExpr(val callee: ExprNode, val args: List<TupArg>): Expr
 data class InfixExpr(val op: String, var lhs: ExprNode, var rhs: ExprNode): Expr {var ordered = false}
@@ -88,6 +87,9 @@ data class CoerceExpr(val target: ExprNode, val type: TypeNode): Expr
 data class FieldExpr(val target: ExprNode, val field: ExprNode): Expr
 data class ConstructExpr(val type: TypeNode, val args: List<ExprNode>): Expr
 data class TupExpr(val args: List<TupArg>): Expr
+data class TupUpdateExpr(val source: ExprNode, val args: List<TupArg>): Expr
+data class ArrayExpr(val values: List<ExprNode>): Expr
+data class MapExpr(val pairs: List<Pair<ExprNode, ExprNode>>): Expr
 data class FunExpr(val args: List<Arg>, val body: ExprNode): Expr
 data class FormatExpr(val chunks: List<FormatChunk>): Expr
 data class CaseExpr(val pivot: ExprNode, val alts: List<Alt>): Expr

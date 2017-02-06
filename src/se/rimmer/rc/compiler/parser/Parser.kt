@@ -1,11 +1,22 @@
 package se.rimmer.rc.compiler.parser
 
-import se.rimmer.rc.compiler.Diagnostics
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.util.*
 
-class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnostics) {
+interface ParserListener {
+    fun onWarning(location: SourceLocation, warning: String) {}
+    fun onError(location: SourceLocation, error: String) {}
+    fun onToken(token: Token) {}
+}
+
+class LexerAdapter(val listener: ParserListener): LexerListener {
+    override fun onToken(token: Token) = listener.onToken(token)
+    override fun onWarning(location: SourceLocation, warning: String) = listener.onWarning(location, warning)
+    override fun onError(location: SourceLocation, error: String) = listener.onError(location, error)
+}
+
+class ModuleParser(text: String, listener: ParserListener): Parser(text, LexerAdapter(listener)) {
     fun parseModule(target: Module) {
         withLevel {
             while(token.type == Token.Type.Semicolon) {
@@ -13,10 +24,13 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
                     eat()
                 }
 
-                if(token.type == Token.Type.kwImport) {
-                    target.imports.add(node {parseImport()})
-                } else {
-                    target.decls.add(parseTopDecl())
+                when(token.type) {
+                    Token.Type.kwImport -> target.imports.add(node {parseImport()})
+                    Token.Type.kwInfixL, Token.Type.kwInfixR -> {
+                        val op = node {parseFixity()}
+                        target.ops[op.ast.op] = op
+                    }
+                    else -> target.decls.add(parseTopDecl())
                 }
             }
         }
@@ -168,6 +182,25 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
         return InstanceDecl(type, decls)
     }
 
+    fun parseFixity(): Fixity {
+        val isRight = if(token.type == Token.Type.kwInfixL) {
+            eat()
+            false
+        } else if(token.type == Token.Type.kwInfixR) {
+            eat()
+            true
+        } else {
+            throw IllegalArgumentException()
+        }
+
+        expect(Token.Type.Integer)
+        val precedence = token.intPayload
+        eat()
+
+        val op = parseQop()
+        return Fixity(op, if(isRight) FixityKind.Right else FixityKind.Left, precedence.toInt())
+    }
+
     fun parseBlock(isFun: Boolean): Expr {
         // To make the code more readable we avoid using '=' inside expressions, and use '->' instead.
         return if(token.type == if(isFun) Token.Type.opEquals else Token.Type.opArrowR) {
@@ -316,6 +349,8 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
     fun parseBaseExpr(): Expr {
         if(token.type == Token.Type.BraceL) {
             return parseTupExpr()
+        } else if(token.type == Token.Type.BracketL) {
+            return parseArrayExpr()
         } else if(token.type == Token.Type.ConID) {
             val id = node {parseQualified()}
             if(id.ast.isVar) {
@@ -446,9 +481,69 @@ class ModuleParser(text: String, diagnostics: Diagnostics): Parser(text, diagnos
         }
     }
 
+    fun parseArrayExpr(): Expr {
+        expect(Token.Type.BracketL, true)
+        if(token.type == Token.Type.BracketR) {
+            // Empty array
+            eat()
+            return ArrayExpr(emptyList())
+        } else if(token.type == Token.Type.opArrowD) {
+            // Empty map
+            eat()
+            expect(Token.Type.BracketR, true)
+            return MapExpr(emptyList())
+        } else {
+            val first = node { parseExpr() }
+            if(token.type == Token.Type.opArrowD) {
+                eat()
+                val firstValue = node {parseExpr()}
+                if(token.type == Token.Type.Comma) {
+                    eat()
+                    val content = sepBy(Token.Type.Comma) {
+                        val key = node {parseExpr()}
+                        expect(Token.Type.opArrowD, true)
+                        val value = node {parseExpr()}
+                        key to value
+                    }
+                    expect(Token.Type.BracketR, true)
+                    return MapExpr(listOf(first to firstValue) + content)
+                } else {
+                    expect(Token.Type.BracketR, true)
+                    return MapExpr(listOf(first to firstValue))
+                }
+            } else if(token.type == Token.Type.Comma) {
+                eat()
+                val content = sepBy(Token.Type.Comma) { node {parseExpr()} }
+                expect(Token.Type.BracketR, true)
+                return ArrayExpr(listOf(first) + content)
+            } else {
+                expect(Token.Type.BracketR, true)
+                return ArrayExpr(listOf(first))
+            }
+        }
+    }
+
     fun parseTupExpr(): Expr {
-        val args = braces { sepBy1(Token.Type.Comma) { parseTupArg() } }
-        return TupExpr(args)
+        return braces {
+            val first = node {parseExpr()}
+            if(token.type == Token.Type.opBar) {
+                eat()
+                val args = sepBy1(Token.Type.Comma) { parseTupArg() }
+                TupUpdateExpr(first, args)
+            } else {
+                val args = if(first.ast is AssignExpr) {
+                    val target = first.ast.target.ast
+                    if(target is VarExpr && target.name.isVar && target.name.qualifier.isEmpty()) {
+                        listOf(TupArg(target.name.name, first.ast.value)) + sepBy1(Token.Type.Comma) { parseTupArg() }
+                    } else {
+                        throw ParseError("Tuple fields must be names")
+                    }
+                } else {
+                    listOf(TupArg(null, first)) + sepBy1(Token.Type.Comma) { parseTupArg() }
+                }
+                TupExpr(args)
+            }
+        }
     }
 
     fun parseTupArg(): TupArg {

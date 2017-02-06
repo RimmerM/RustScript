@@ -3,7 +3,7 @@ package se.rimmer.rc.compiler.parser
 import se.rimmer.rc.compiler.Diagnostics
 import java.util.*
 
-open class Parser(text: String, diagnostics: Diagnostics) {
+open class Parser(text: String, listener: LexerListener) {
     inner class ParseError(text: String): Exception("line ${token.startLine}, column ${token.startColumn}: $text")
 
     inline fun <T> node(f: () -> T): Node<T> {
@@ -176,7 +176,7 @@ open class Parser(text: String, diagnostics: Diagnostics) {
     fun eat() = lexer.next()
 
     var token = Token()
-    val lexer = Lexer(text, token, diagnostics)
+    val lexer = Lexer(text, token, ParseMode.Active, listener)
     var lastError: ParseError? = null
 
     init {
