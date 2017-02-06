@@ -26,7 +26,7 @@ fun Value.use(scope: VarScope): Expr {
  *    and greatly improves code size and readability.
  *  - Merge Alloca with Store where it makes sense.
  *  - Inline if-statements. Simple combinations of If, Br, Phi can be inlined
-  *   to ternary expressions without any additional analysis.
+ *    to ternary expressions without any additional analysis.
  */
 fun genInst(scope: VarScope, stmts: ArrayList<Stmt>, inst: Inst): Expr {
     val expr = when(inst) {
@@ -78,11 +78,49 @@ fun genInst(scope: VarScope, stmts: ArrayList<Stmt>, inst: Inst): Expr {
                 }
 
                 // When most fields are updated, we create a new array and add the remaining fields.
-                ArrayExpr(fields.mapIndexed { i, it ->
+                ArrayExpr(fields.mapIndexed { i, _ ->
                     val update = inst.updates.find { it.first == i }
                     update?.second?.use(scope) ?: FieldExpr(source, IntExpr(i))
                 })
             }
+        }
+        is RecordInst -> {
+            val args = inst.fields.map { it.use(scope) }
+            when(inst.con.parent.kind) {
+                RecordKind.Enum -> IntExpr(inst.con.index)
+                RecordKind.Single -> if(args.size == 1) args[0] else ArrayExpr(args)
+                RecordKind.Multi -> {
+                    // Special case: when the type contains exactly one empty constructor and one with content,
+                    // we use null to indicate the empty constructor.
+                    if(isConstructorInline(inst.con.parent)) {
+                        if(inst.con.content == null) {
+                            NullExpr
+                        } else if(args.size == 1) {
+                            args[0]
+                        } else {
+                            ArrayExpr(args)
+                        }
+                    } else {
+                        ArrayExpr(listOf(IntExpr(inst.con.index)) + args)
+                    }
+                }
+            }
+        }
+        is TupInst -> {
+            val args = inst.fields.map { it.use(scope) }
+            ArrayExpr(args)
+        }
+        is ArrayInst -> {
+            val args = inst.values.map { it.use(scope) }
+            ArrayExpr(args)
+        }
+        is MapInst -> {
+            throw NotImplementedError()
+        }
+        is FunInst -> {
+            val funScope = scope.genChild(null)
+            val args = inst.function.args.map { funScope.genVar(it.value.name, it.value.uses.size) }
+            FunExpr(null, args, genBlock(funScope, inst.function.body).stmts)
         }
         is CastPrimInst -> {
             val source = inst.source.use(scope)
@@ -93,6 +131,36 @@ fun genInst(scope: VarScope, stmts: ArrayList<Stmt>, inst: Inst): Expr {
                 Primitive.Int -> InfixExpr("|", source, IntExpr(0))
                 Primitive.Bool -> PrefixExpr("!", PrefixExpr("!", source))
             }
+        }
+        is PrimInst -> genPrimitive(scope, inst.op, inst.args)
+        is CallInst -> {
+            throw NotImplementedError()
+        }
+        is CallDynInst -> {
+            val function = inst.function.use(scope)
+            val args = inst.args.map { it.use(scope) }
+            CallExpr(function, args)
+        }
+        is CallForeignInst -> {
+            throw NotImplementedError()
+        }
+        is IfInst -> {
+            throw NotImplementedError()
+        }
+        is BrInst -> {
+            if(inst.to.incoming.size == 1) {
+                stmts.addAll(genBlock(scope, inst.to).stmts)
+            } else {
+                throw NotImplementedError()
+            }
+            UndefinedExpr
+        }
+        is PhiInst -> {
+            throw NotImplementedError()
+        }
+        is RetInst -> {
+            stmts.add(ReturnStmt(inst.value.use(scope)))
+            UndefinedExpr
         }
         else -> throw NotImplementedError()
     }
@@ -110,6 +178,13 @@ fun genInst(scope: VarScope, stmts: ArrayList<Stmt>, inst: Inst): Expr {
 
     return inst.codegen as Expr
 }
+
+/*
+ * Checks if the constructor field of this record can be inlined and represented as null.
+ */
+fun isConstructorInline(type: RecordType) =
+    type.constructors.size <= 2 &&
+    type.constructors.any { it.content == null }
 
 /*
  * Checks if an expression should always be inlined.
