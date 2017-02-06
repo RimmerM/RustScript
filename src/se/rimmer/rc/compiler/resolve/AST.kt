@@ -137,6 +137,8 @@ class Block(val function: Function) {
     // Set when the block contains a terminating instruction.
     // Appending instructions after this is set will have no effect.
     var complete = false
+
+    var codegen: Any? = null
 }
 
 // A single usage of a value by an instruction.
@@ -168,7 +170,7 @@ class LoadFieldInst(block: Block, name: String?, type: Type, val from: Value, va
 class StoreFieldInst(block: Block, name: String?, val value: Value, val to: Value, val field: Int): Inst(block, name, unitType, listOf(value, to))
 
 /* Construction instructions. */
-class RecordInst(block: Block, name: String?, type: RecordType, val fields: List<Value>): Inst(block, name, type, fields)
+class RecordInst(block: Block, name: String?, type: RecordType, val con: Constructor, val fields: List<Value>): Inst(block, name, type, fields)
 class TupInst(block: Block, name: String?, type: TupType, val fields: List<Value>): Inst(block, name, type, fields)
 class ArrayInst(block: Block, name: String?, type: ArrayType, val values: List<Value>): Inst(block, name, type, values)
 class MapInst(block: Block, name: String?, type: MapType, val pairs: List<Pair<Value, Value>>): Inst(block, name, type, pairs.flatMap { it.toList() })

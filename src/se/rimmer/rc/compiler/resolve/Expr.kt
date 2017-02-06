@@ -18,15 +18,24 @@ import se.rimmer.rc.compiler.parser.IfExpr as ASTIfExpr
 import se.rimmer.rc.compiler.parser.MultiIfExpr as ASTMultiIfExpr
 import se.rimmer.rc.compiler.parser.WhileExpr as ASTWhileExpr
 import se.rimmer.rc.compiler.parser.CaseExpr as ASTCaseExpr
+import se.rimmer.rc.compiler.parser.CoerceExpr as ASTCoerceExpr
+import se.rimmer.rc.compiler.parser.ConstructExpr as ASTConstructExpr
+import se.rimmer.rc.compiler.parser.TupExpr as ASTTupExpr
+import se.rimmer.rc.compiler.parser.TupUpdateExpr as ASTTupUpdateExpr
+import se.rimmer.rc.compiler.parser.ArrayExpr as ASTArrayExpr
+import se.rimmer.rc.compiler.parser.MapExpr as ASTMapExpr
+import se.rimmer.rc.compiler.parser.FunExpr as ASTFunExpr
+import se.rimmer.rc.compiler.parser.FormatExpr as ASTFormatExpr
 
-fun FunctionBuilder.resolveExpr(ast: ASTExpr, name: String?, resultUsed: Boolean, typeHint: Type?): Value {
+fun FunctionBuilder.resolveExpr(node: Node<ASTExpr>, name: String?, resultUsed: Boolean, typeHint: Type?): Value {
+    val ast = node.ast
     return when(ast) {
         is ASTMultiExpr -> resolveMulti(ast, name, resultUsed, typeHint)
         is ASTLitExpr -> resolveLit(name, ast)
         is ASTAppExpr -> resolveCall(name, ast, typeHint)
         is ASTNestedExpr -> resolveExpr(ast.expr, name, resultUsed, typeHint)
-        is ASTPrefixExpr -> resolvePrefix(name, ast, typeHint)
-        is ASTInfixExpr -> resolveInfix(name, ast, typeHint)
+        is ASTPrefixExpr -> resolvePrefix(name, node as Node<ASTPrefixExpr>, typeHint)
+        is ASTInfixExpr -> resolveInfix(name, node as Node<ASTInfixExpr>, typeHint)
         is ASTReturnExpr -> resolveReturn(ast)
         is ASTAssignExpr -> resolveAssign(ast)
         is ASTVarExpr -> resolveVar(ast, false)
@@ -35,6 +44,15 @@ fun FunctionBuilder.resolveExpr(ast: ASTExpr, name: String?, resultUsed: Boolean
         is ASTMultiIfExpr -> resolveMultiIf(name, ast, resultUsed, typeHint)
         is ASTWhileExpr -> resolveWhile(name, ast)
         is ASTFieldExpr -> resolveField(name, ast)
+        is ASTCoerceExpr -> resolveCoerce(name, ast)
+        is ASTConstructExpr -> resolveConstruct(name, ast)
+        is ASTTupExpr -> resolveTup(name, ast)
+        is ASTTupUpdateExpr -> resolveTupUpdate(name, ast)
+        is ASTArrayExpr -> resolveArray(name, ast)
+        is ASTMapExpr -> resolveMap(name, ast)
+        is ASTFunExpr -> resolveFun(name, ast)
+        is ASTFormatExpr -> resolveFormat(name, ast)
+        is ASTCaseExpr -> resolveCase(name, ast, resultUsed)
         else -> throw NotImplementedError()
     }
 }
@@ -93,9 +111,9 @@ private fun FunctionBuilder.resolveVar(ast: ASTVarExpr, asRV: Boolean): Value {
     }
 }
 
-private fun FunctionBuilder.resolveAssign(ast: ASTAssignExpr) = when(ast.target) {
+private fun FunctionBuilder.resolveAssign(ast: ASTAssignExpr) = when(ast.target.ast) {
     is ASTVarExpr -> {
-        val v = resolveVar(ast.target, true)
+        val v = resolveVar(ast.target.ast, true)
         if(v.type !is RefType) {
             throw ResolveError("type is not assignable")
         }
@@ -249,16 +267,56 @@ private fun FunctionBuilder.resolveCall(name: String?, ast: ASTAppExpr, typeHint
     throw NotImplementedError()
 }
 
-private fun FunctionBuilder.resolvePrefix(name: String?, ast: ASTPrefixExpr, typeHint: Type?): Value {
-    return resolveCall(name, ASTAppExpr(ASTVarExpr(Qualified(ast.op, emptyList(), true)), listOf(ast.arg)), typeHint)
+private fun FunctionBuilder.resolvePrefix(name: String?, node: Node<ASTPrefixExpr>, typeHint: Type?): Value {
+    val args = listOf(TupArg(null, node.ast.arg))
+    val call = ASTAppExpr(Node(ASTVarExpr(Qualified(node.ast.op, emptyList(), true)), node.location), args)
+    return resolveCall(name, call, typeHint)
 }
 
-private fun FunctionBuilder.resolveInfix(name: String?, ast: ASTInfixExpr, typeHint: Type?): Value {
-    val e = if(ast.ordered) ast else reorder(block.function.module, ast, 0)
-    return resolveCall(name, ASTAppExpr(ASTVarExpr(Qualified(e.op, emptyList(), true)), listOf(e.lhs, e.rhs)), typeHint)
+private fun FunctionBuilder.resolveInfix(name: String?, unorderedNode: Node<ASTInfixExpr>, typeHint: Type?): Value {
+    val node = if(unorderedNode.ast.ordered) unorderedNode else reorder(block.function.module, unorderedNode, 0)
+    val args = listOf(TupArg(null, node.ast.lhs), TupArg(null, node.ast.rhs))
+    val call = ASTAppExpr(Node(ASTVarExpr(Qualified(node.ast.op, emptyList(), true)), node.location), args)
+    return resolveCall(name, call, typeHint)
 }
 
 private fun FunctionBuilder.resolveField(name: String?, ast: ASTFieldExpr): Value {
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolveFun(name: String?, ast: ASTFunExpr): Value {
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolveArray(name: String?, ast: ASTArrayExpr): Value {
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolveMap(name: String?, ast: ASTMapExpr): Value {
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolveFormat(name: String?, ast: ASTFormatExpr): Value {
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolveCoerce(name: String?, ast: ASTCoerceExpr): Value {
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolveConstruct(name: String?, ast: ASTConstructExpr): Value {
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolveTup(name: String?, ast: ASTTupExpr): Value {
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolveTupUpdate(name: String?, ast: ASTTupUpdateExpr): Value {
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolveCase(name: String?, ast: ASTCaseExpr, resultUsed: Boolean): Value {
     throw NotImplementedError()
 }
 
@@ -295,24 +353,24 @@ private fun opInfo(module: Module, name: Qualified): Operator {
     return Operator(9, false)
 }
 
-private fun reorder(module: Module, ast: ASTInfixExpr, min: Int): ASTInfixExpr {
+private fun reorder(module: Module, ast: Node<ASTInfixExpr>, min: Int): Node<ASTInfixExpr> {
     var lhs = ast
-    while(lhs.rhs is ASTInfixExpr && !lhs.ordered) {
-        val first = opInfo(module, Qualified(lhs.op, emptyList(), true))
+    while(lhs.ast.rhs.ast is ASTInfixExpr && !lhs.ast.ordered) {
+        val first = opInfo(module, Qualified(lhs.ast.op, emptyList(), true))
         if(first.precedence < min) break
 
-        val rhs = lhs.rhs as ASTInfixExpr
-        val second = opInfo(module, Qualified(rhs.op, emptyList(), true))
+        val rhs = lhs.ast.rhs as Node<ASTInfixExpr>
+        val second = opInfo(module, Qualified(rhs.ast.op, emptyList(), true))
         if(second.precedence > first.precedence || (second.precedence == first.precedence && second.isRight)) {
-            lhs.rhs = reorder(module, rhs, second.precedence)
-            if(lhs.rhs == rhs) {
-                lhs.ordered = true
+            lhs.ast.rhs = reorder(module, rhs, second.precedence)
+            if(lhs.ast.rhs.ast == rhs.ast) {
+                lhs.ast.ordered = true
                 break
             }
         } else {
-            lhs.ordered = true
-            lhs.rhs = rhs.lhs
-            rhs.lhs = lhs
+            lhs.ast.ordered = true
+            lhs.ast.rhs = rhs.ast.lhs
+            rhs.ast.lhs = lhs
             lhs = rhs
         }
     }
