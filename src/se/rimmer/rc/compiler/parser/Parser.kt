@@ -249,8 +249,11 @@ class ModuleParser(module: Qualified, text: String, listener: ParserListener): P
 
     fun parsePrefixExpr(): Expr = node {
         if(token.type == Token.Type.VarSym) {
-            val op = token.idPayload
-            eat()
+            val op = node {
+                val op = token.idPayload
+                eat()
+                VarExpr(Qualified(op, emptyList(), true))
+            }
             val expr = parsePrefixExpr()
             PrefixExpr(op, expr)
         } else {
@@ -818,18 +821,18 @@ class ModuleParser(module: Qualified, text: String, listener: ParserListener): P
         return id
     }
 
-    fun parseQop(): String {
+    fun parseQop() = node {
         if(token.type == Token.Type.VarSym) {
             val id = token.idPayload
             eat()
-            return id
+            VarExpr(Qualified(id, emptyList(), true))
         } else if(token.type == Token.Type.Grave) {
             eat()
             expect(Token.Type.VarID)
             val id = token.idPayload
             eat()
             expect(Token.Type.Grave, true)
-            return id
+            VarExpr(Qualified(id, emptyList(), true))
         } else {
             throw ParseError("Expected operator")
         }

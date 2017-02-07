@@ -42,7 +42,7 @@ data class Import(
 data class Export(val name: Qualified, val qualified: Boolean, val exportName: String): Node()
 
 enum class FixityKind { Left, Right }
-data class Fixity(val op: String, val kind: FixityKind, val precedence: Int): Node()
+data class Fixity(val op: VarExpr, val kind: FixityKind, val precedence: Int): Node()
 
 data class Qualified(val name: String, val qualifier: List<String>, val isVar: Boolean) {
     override fun toString() = qualifier.joinToString(".") + '.' + name
@@ -81,8 +81,8 @@ data class NestedExpr(val expr: Expr): Expr()
 data class MultiExpr(val list: List<Expr>): Expr()
 data class VarExpr(val name: Qualified): Expr()
 data class AppExpr(val callee: Expr, val args: List<TupArg>): Expr()
-data class InfixExpr(val op: String, var lhs: Expr, var rhs: Expr): Expr() {var ordered = false}
-data class PrefixExpr(val op: String, val arg: Expr): Expr()
+data class InfixExpr(val op: VarExpr, var lhs: Expr, var rhs: Expr): Expr() {var ordered = false}
+data class PrefixExpr(val op: VarExpr, val arg: Expr): Expr()
 data class IfExpr(val cond: Expr, val then: Expr, val otherwise: Expr?): Expr()
 data class MultiIfExpr(val cases: List<IfCase>): Expr()
 data class DeclExpr(val name: String, val content: Expr?, val mutable: Boolean): Expr()
