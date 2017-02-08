@@ -111,27 +111,6 @@ internal fun resolveScope(module: Module) {
     }
 }
 
-internal fun resolveAlias(type: AliasType): AliasType {
-    type.ast?.let {
-        type.ast = null
-        type.target = resolveType(type.scope, it.target, it.type)
-    }
-    return type
-}
-
-internal fun resolveRecord(type: RecordType): RecordType {
-    type.ast?.let { ast ->
-        type.ast = null
-        type.constructors.forEach {
-            val cAst = ast.cons[it.index]
-            if(cAst.content != null) {
-                it.content = resolveType(type.scope, cAst.content, null)
-            }
-        }
-    }
-    return type
-}
-
 internal fun resolveForeignFun(f: ForeignFunction) {
     f.ast?.let {
         val type = it.type as ASTFunType

@@ -1,11 +1,14 @@
 package se.rimmer.rc.compiler.resolve
 
-import se.rimmer.rc.compiler.parser.*
-import se.rimmer.rc.compiler.parser.MapType as ASTMapType
+import se.rimmer.rc.compiler.parser.DataDecl
+import se.rimmer.rc.compiler.parser.ForeignDecl
+import se.rimmer.rc.compiler.parser.Literal
+import se.rimmer.rc.compiler.parser.Qualified
+import java.util.*
 import se.rimmer.rc.compiler.parser.ArrayType as ASTArrayType
+import se.rimmer.rc.compiler.parser.MapType as ASTMapType
 import se.rimmer.rc.compiler.parser.TupType as ASTTupType
 import se.rimmer.rc.compiler.parser.TypeDecl as ASTTypeDecl
-import java.util.*
 
 data class Module(val name: Qualified) {
     val imports = HashMap<List<String>, Import>()
@@ -13,7 +16,7 @@ data class Module(val name: Qualified) {
     val templateFunctions = HashMap<String, Function>()
     val foreignFunctions = HashMap<String, ForeignFunction>()
     val types = HashMap<String, Type>()
-    val constructors = HashMap<String, Constructor>()
+    val constructors = HashMap<String, Con>()
     val ops = HashMap<String, Operator>()
 
     // The symbols defined in this module that are visible externally.
@@ -51,7 +54,7 @@ val unitType = UnitType(Unit)
 
 data class GenField(val name: String?, val type: Type, val mutable: Boolean, val gen: GenType)
 
-class GenType {
+class GenType(val index: Int): Type {
     val classes: MutableSet<TypeClass> = Collections.newSetFromMap(IdentityHashMap<TypeClass, Boolean>())
     val fields = HashMap<String, GenField>()
 }
@@ -59,7 +62,7 @@ class GenType {
 enum class Primitive(val sourceName: kotlin.String) { Int("Int"), Double("Double"), Bool("Bool"), String("String") }
 data class PrimType(val prim: Primitive): Type
 
-data class AliasType(val generics: List<GenType>, var to: Type, var ast: ASTTypeDecl?): Type
+data class AliasType(var ast: ASTTypeDecl?, val generics: List<GenType>, var to: Type): Type
 data class RefType(val to: Type): Type
 
 data class FunArg(val name: String?, val index: Int, val type: Type)
@@ -67,18 +70,21 @@ data class FunType(val args: List<FunArg>, val result: Type): Type
 
 enum class RecordKind { Enum, Single, Multi }
 
-data class RecordType(var ast: DataDecl?): Type {
+data class RecordType(var ast: DataDecl?, val generics: List<GenType>): Type {
     var kind = RecordKind.Multi
-    val constructors = ArrayList<Constructor>()
+    val constructors = ArrayList<Con>()
 }
 
 class Field(val name: String?, val index: Int, val type: Type, val container: Type, val mutable: Boolean)
 
-data class TupType(var ast: ASTTupType?, val fields: List<Field>): Type
-data class ArrayType(var ast: ASTArrayType?, val content: Type): Type
-data class MapType(var ast: ASTMapType?, val from: Type, val to: Type): Type
+class TupType: Type {
+    val fields = ArrayList<Field>()
+}
 
-data class Constructor(val name: Qualified, val index: Int, val parent: RecordType, var content: Type? = null)
+data class ArrayType(val content: Type): Type
+data class MapType(val from: Type, val to: Type): Type
+
+data class Con(val name: Qualified, val index: Int, val parent: RecordType, var content: Type? = null)
 
 class GenScope {
     val types = ArrayList<GenType>()
@@ -170,7 +176,7 @@ class LoadFieldInst(block: Block, name: String?, type: Type, val from: Value, va
 class StoreFieldInst(block: Block, name: String?, val value: Value, val to: Value, val field: Int): Inst(block, name, unitType, listOf(value, to))
 
 /* Construction instructions. */
-class RecordInst(block: Block, name: String?, type: RecordType, val con: Constructor, val fields: List<Value>): Inst(block, name, type, fields)
+class RecordInst(block: Block, name: String?, type: RecordType, val con: Con, val fields: List<Value>): Inst(block, name, type, fields)
 class TupInst(block: Block, name: String?, type: TupType, val fields: List<Value>): Inst(block, name, type, fields)
 class ArrayInst(block: Block, name: String?, type: ArrayType, val values: List<Value>): Inst(block, name, type, values)
 class MapInst(block: Block, name: String?, type: MapType, val pairs: List<Pair<Value, Value>>): Inst(block, name, type, pairs.flatMap { it.toList() })

@@ -28,7 +28,7 @@ class ModuleParser(module: Qualified, text: String, listener: ParserListener): P
                     Token.Type.kwImport -> target.imports.add(node {parseImport()})
                     Token.Type.kwInfixL, Token.Type.kwInfixR -> {
                         val op = node {parseFixity()}
-                        target.ops[op.op] = op
+                        target.ops[op.op.name.name] = op
                     }
                     else -> target.decls.add(parseTopDecl())
                 }

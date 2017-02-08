@@ -2,30 +2,30 @@ package se.rimmer.rc.compiler.resolve
 
 import se.rimmer.rc.compiler.parser.*
 import java.util.*
-import se.rimmer.rc.compiler.parser.Expr as ASTExpr
-import se.rimmer.rc.compiler.parser.MultiExpr as ASTMultiExpr
-import se.rimmer.rc.compiler.parser.LitExpr as ASTLitExpr
 import se.rimmer.rc.compiler.parser.AppExpr as ASTAppExpr
-import se.rimmer.rc.compiler.parser.FieldExpr as ASTFieldExpr
-import se.rimmer.rc.compiler.parser.VarExpr as ASTVarExpr
-import se.rimmer.rc.compiler.parser.NestedExpr as ASTNestedExpr
-import se.rimmer.rc.compiler.parser.PrefixExpr as ASTPrefixExpr
-import se.rimmer.rc.compiler.parser.InfixExpr as ASTInfixExpr
-import se.rimmer.rc.compiler.parser.ReturnExpr as ASTReturnExpr
+import se.rimmer.rc.compiler.parser.ArrayExpr as ASTArrayExpr
 import se.rimmer.rc.compiler.parser.AssignExpr as ASTAssignExpr
-import se.rimmer.rc.compiler.parser.DeclExpr as ASTDeclExpr
-import se.rimmer.rc.compiler.parser.IfExpr as ASTIfExpr
-import se.rimmer.rc.compiler.parser.MultiIfExpr as ASTMultiIfExpr
-import se.rimmer.rc.compiler.parser.WhileExpr as ASTWhileExpr
 import se.rimmer.rc.compiler.parser.CaseExpr as ASTCaseExpr
 import se.rimmer.rc.compiler.parser.CoerceExpr as ASTCoerceExpr
 import se.rimmer.rc.compiler.parser.ConstructExpr as ASTConstructExpr
+import se.rimmer.rc.compiler.parser.DeclExpr as ASTDeclExpr
+import se.rimmer.rc.compiler.parser.Expr as ASTExpr
+import se.rimmer.rc.compiler.parser.FieldExpr as ASTFieldExpr
+import se.rimmer.rc.compiler.parser.FormatExpr as ASTFormatExpr
+import se.rimmer.rc.compiler.parser.FunExpr as ASTFunExpr
+import se.rimmer.rc.compiler.parser.IfExpr as ASTIfExpr
+import se.rimmer.rc.compiler.parser.InfixExpr as ASTInfixExpr
+import se.rimmer.rc.compiler.parser.LitExpr as ASTLitExpr
+import se.rimmer.rc.compiler.parser.MapExpr as ASTMapExpr
+import se.rimmer.rc.compiler.parser.MultiExpr as ASTMultiExpr
+import se.rimmer.rc.compiler.parser.MultiIfExpr as ASTMultiIfExpr
+import se.rimmer.rc.compiler.parser.NestedExpr as ASTNestedExpr
+import se.rimmer.rc.compiler.parser.PrefixExpr as ASTPrefixExpr
+import se.rimmer.rc.compiler.parser.ReturnExpr as ASTReturnExpr
 import se.rimmer.rc.compiler.parser.TupExpr as ASTTupExpr
 import se.rimmer.rc.compiler.parser.TupUpdateExpr as ASTTupUpdateExpr
-import se.rimmer.rc.compiler.parser.ArrayExpr as ASTArrayExpr
-import se.rimmer.rc.compiler.parser.MapExpr as ASTMapExpr
-import se.rimmer.rc.compiler.parser.FunExpr as ASTFunExpr
-import se.rimmer.rc.compiler.parser.FormatExpr as ASTFormatExpr
+import se.rimmer.rc.compiler.parser.VarExpr as ASTVarExpr
+import se.rimmer.rc.compiler.parser.WhileExpr as ASTWhileExpr
 
 fun FunctionBuilder.resolveExpr(ast: ASTExpr, name: String?, resultUsed: Boolean, typeHint: Type?): Value {
     return when(ast) {
@@ -258,7 +258,7 @@ private fun FunctionBuilder.resolveCall(name: String?, ast: ASTAppExpr, typeHint
 
     }
 
-    val args = ast.args.map { resolveExpr(it, null, true, null) }
+    val args = ast.args.map { resolveExpr(it.content, null, true, null) }
     if(ast.callee is ASTVarExpr) {
         testPrimOp(ast.callee.name, name, args)?.let { return it }
     }
@@ -268,9 +268,7 @@ private fun FunctionBuilder.resolveCall(name: String?, ast: ASTAppExpr, typeHint
 
 private fun FunctionBuilder.resolvePrefix(name: String?, ast: ASTPrefixExpr, typeHint: Type?): Value {
     val args = listOf(TupArg(null, ast.arg))
-    val callee = ASTVarExpr(Qualified(ast.op, emptyList(), true))
-    val call = ASTAppExpr(callee, args)
-    callee.locationFrom(ast)
+    val call = ASTAppExpr(ast.op, args)
     call.locationFrom(ast)
     return resolveCall(name, call, typeHint)
 }
@@ -278,7 +276,7 @@ private fun FunctionBuilder.resolvePrefix(name: String?, ast: ASTPrefixExpr, typ
 private fun FunctionBuilder.resolveInfix(name: String?, unorderedAst: ASTInfixExpr, typeHint: Type?): Value {
     val ast = if(unorderedAst.ordered) unorderedAst else reorder(block.function.module, unorderedAst, 0)
     val args = listOf(TupArg(null, ast.lhs), TupArg(null, ast.rhs))
-    val call = ASTAppExpr(ASTVarExpr(Qualified(ast.op, emptyList(), true), location), args)
+    val call = ASTAppExpr(ast.op, args)
     return resolveCall(name, call, typeHint)
 }
 
@@ -358,11 +356,11 @@ private fun opInfo(module: Module, name: Qualified): Operator {
 private fun reorder(module: Module, ast: ASTInfixExpr, min: Int): ASTInfixExpr {
     var lhs = ast
     while(lhs.rhs is ASTInfixExpr && !lhs.ordered) {
-        val first = opInfo(module, Qualified(lhs.op, emptyList(), true))
+        val first = opInfo(module, lhs.op.name)
         if(first.precedence < min) break
 
         val rhs = lhs.rhs as ASTInfixExpr
-        val second = opInfo(module, Qualified(rhs.op, emptyList(), true))
+        val second = opInfo(module, rhs.op.name)
         if(second.precedence > first.precedence || (second.precedence == first.precedence && second.isRight)) {
             lhs.rhs = reorder(module, rhs, second.precedence)
             if(lhs.rhs == rhs) {
