@@ -2,12 +2,11 @@ package se.rimmer.rc.compiler.parser
 
 import org.junit.Assert
 import org.junit.Test
-import se.rimmer.rc.compiler.PrintDiagnostics
 import java.math.BigDecimal
 import java.math.BigInteger
 
 fun parser(text: String): ModuleParser {
-    val p = ModuleParser(text, PrintDiagnostics())
+    val p = ModuleParser(q("M"), text, object: ParserListener {})
     skipWhitespace(p.lexer)
     return p
 }
@@ -25,8 +24,6 @@ fun testExprs(tests: Array<out Pair<String, Expr>>) {
 
 fun q(name: String) = Qualified(name, emptyList(), name.firstOrNull()?.isLowerCase() ?: false)
 fun v(name: String) = VarExpr(q(name))
-fun l(length: Int, offset: Int = 0) = SourceLocation(0, 0, offset, offset + length, offset, offset + length)
-fun <T> n(it: T, length: Int, offset: Int = 0) = Node(it, l(length, offset))
 
 val selExprTests = arrayOf(
     /* Literals */
@@ -43,28 +40,29 @@ val selExprTests = arrayOf(
 
     /* Other cases */
     "my_variable" to v("my_variable"),
-    "(v)" to NestedExpr(n(v("v"), 1, 1))
+    "(v)" to NestedExpr(v("v"))
 )
 
 val baseExprTests = arrayOf(
-    "{0, x}" to TupExpr(listOf(TupArg(null, n(LitExpr(IntLiteral(BigInteger.valueOf(0))), 1, 1)), TupArg(null, n(v("x"), 1, 4)))),
-    "{x = 0, y = x}" to TupExpr(listOf(TupArg("x", n(LitExpr(IntLiteral(BigInteger.valueOf(0))), 1, 5)), TupArg("y", n(v("x"), 1, 12)))),
-    "Vector" to ConstructExpr(n(ConType(q("Vector")), 6), emptyList()),
-    "Vector(a, b)" to ConstructExpr(n(ConType(q("Vector")), 6), listOf(n(v("a"), 1, 7), n(v("b"), 1, 9))),
-    "Vector {x = a, y = b}" to ConstructExpr(n(ConType(q("Vector")), 6), listOf(TupExpr(listOf(TupArg("x", v("a")), TupArg("y", v("b")))))),
-    "() => x" to FunExpr(emptyList(), n(v("x"), 1, 6)),
-    "(a, b) => x" to FunExpr(listOf(Arg("a", null, null), Arg("b", null, null)), n(v("x"), 1, 10)),
-    "(a: Int, b: Int) => x" to FunExpr(listOf(Arg("a", ConType(q("Int"))), Arg("b", ConType(q("Int")))), v("x"))
+    "{0, x}" to TupExpr(listOf(TupArg(null, LitExpr(IntLiteral(BigInteger.valueOf(0)))), TupArg(null, v("x")))),
+    "{x = 0, y = x}" to TupExpr(listOf(TupArg("x", LitExpr(IntLiteral(BigInteger.valueOf(0)))), TupArg("y", v("x")))),
+    "Vector" to ConstructExpr(ConType(q("Vector")), emptyList()),
+    "Vector(a, b)" to ConstructExpr(ConType(q("Vector")), listOf(v("a"), v("b"))),
+    "Vector {x = a, y = b}" to ConstructExpr(ConType(q("Vector")), listOf(TupExpr(listOf(TupArg("x", v("a")), TupArg("y", v("b")))))),
+    "() => x" to FunExpr(emptyList(), v("x")),
+    "(a, b) => x" to FunExpr(listOf(Arg("a", null, null), Arg("b", null, null)), v("x")),
+    "(a: Int, b: Int) => x" to FunExpr(listOf(Arg("a", ConType(q("Int")), null), Arg("b", ConType(q("Int")), null)), v("x"))
 )
 
 val appExprTests = arrayOf(
-    "x(y, z)" to AppExpr(v("x"), listOf(v("y"), v("z"))),
-    "x(y)" to AppExpr(v("x"), listOf(v("y"))),
-    "x y" to AppExpr(v("x"), listOf(v("y"))),
+    "x(y, z)" to AppExpr(v("x"), listOf(TupArg(null, v("y")), TupArg(null, v("z")))),
+    "x(y)" to AppExpr(v("x"), listOf(TupArg(null, v("y")))),
+    "x(a = y, b = z)" to AppExpr(v("x"), listOf(TupArg("a", v("y")), TupArg("b", v("z")))),
+    "x y" to AppExpr(v("x"), listOf(TupArg(null, v("y")))),
     "x.y" to FieldExpr(v("x"), v("y")),
     "x.0" to FieldExpr(v("x"), LitExpr(IntLiteral(BigInteger.valueOf(0)))),
     "x().y()" to AppExpr(FieldExpr(AppExpr(v("x"), emptyList()), v("y")), emptyList()),
-    "x().y().z.w(a)" to AppExpr(FieldExpr(FieldExpr(AppExpr(FieldExpr(AppExpr(v("x"), emptyList()), v("y")), emptyList()), v("z")), v("w")), listOf(v("a")))
+    "x().y().z.w(a)" to AppExpr(FieldExpr(FieldExpr(AppExpr(FieldExpr(AppExpr(v("x"), emptyList()), v("y")), emptyList()), v("z")), v("w")), listOf(TupArg(null, v("a"))))
 )
 
 val leftExprTests = arrayOf(
@@ -72,21 +70,21 @@ val leftExprTests = arrayOf(
     "let mut x = y" to DeclExpr("x", v("y"), true),
     "if x then y else z" to IfExpr(v("x"), v("y"), v("z")),
     "if x then y" to IfExpr(v("x"), v("y"), null),
-    "if | x == y -> z\n   | x == z -> y" to MultiIfExpr(listOf(IfCase(InfixExpr("==", v("x"), v("y")), v("z")), IfCase(InfixExpr("==", v("x"), v("z")), v("y")))),
-    "while x: print(\"hello\")" to WhileExpr(v("x"), AppExpr(v("print"), listOf(LitExpr(StringLiteral("hello"))))),
+    "if | x == y -> z\n   | x == z -> y" to MultiIfExpr(listOf(IfCase(InfixExpr(VarExpr(q("==")), v("x"), v("y")), v("z")), IfCase(InfixExpr(VarExpr(q("==")), v("x"), v("z")), v("y")))),
+    "while x: print(\"hello\")" to WhileExpr(v("x"), AppExpr(v("print"), listOf(TupArg(null, LitExpr(StringLiteral("hello")))))),
     "match x:\n   Vector -> \"hello\"\n   _ -> \"world\"" to CaseExpr(v("x"), listOf(Alt(ConPat(q("Vector"), emptyList()), null, LitExpr(StringLiteral("hello"))), Alt(AnyPat(Unit), null, LitExpr(StringLiteral("world"))))),
     "return x" to ReturnExpr(v("x"))
 )
 
 val prefixExprTests = arrayOf(
-    "!x" to PrefixExpr("!", v("x")),
-    "!x + y" to InfixExpr("+", PrefixExpr("!", v("x")), v("y")),
-    "!(x + y)" to PrefixExpr("!", NestedExpr(InfixExpr("+", v("x"), v("y"))))
+    "!x" to PrefixExpr(VarExpr(q("!")), v("x")),
+    "!x + y" to InfixExpr(VarExpr(q("+")), PrefixExpr(VarExpr(q("!")), v("x")), v("y")),
+    "!(x + y)" to PrefixExpr(VarExpr(q("!")), NestedExpr(InfixExpr(VarExpr(q("+")), v("x"), v("y"))))
 )
 
 val infixExprTests = arrayOf(
-    "4 * 5" to InfixExpr("*", LitExpr(IntLiteral(BigInteger.valueOf(4))), LitExpr(IntLiteral(BigInteger.valueOf(5)))),
-    "a * b + c / d + (e() & 1)" to InfixExpr("*", v("a"), InfixExpr("+", v("b"), InfixExpr("/", v("c"), InfixExpr("+", v("d"), NestedExpr(InfixExpr("&", AppExpr(v("e"), emptyList()), LitExpr(IntLiteral(BigInteger.valueOf(1)))))))))
+    "4 * 5" to InfixExpr(VarExpr(q("*")), LitExpr(IntLiteral(BigInteger.valueOf(4))), LitExpr(IntLiteral(BigInteger.valueOf(5)))),
+    "a * b + c / d + (e() & 1)" to InfixExpr(VarExpr(q("*")), v("a"), InfixExpr(VarExpr(q("+")), v("b"), InfixExpr(VarExpr(q("/")), v("c"), InfixExpr(VarExpr(q("+")), v("d"), NestedExpr(InfixExpr(VarExpr(q("&")), AppExpr(v("e"), emptyList()), LitExpr(IntLiteral(BigInteger.valueOf(1)))))))))
 )
 
 val exprTests = arrayOf(
@@ -122,10 +120,10 @@ val typeTests = arrayOf(
 
 val declTests = arrayOf(
     "type X(a) = List(a)" to TypeDecl(SimpleType("X", listOf("a")), AppType(ConType(q("List")), listOf(GenType("a")))),
-    "data X(a) = X {a: Int}" to DataDecl(SimpleType("X", listOf("a")), listOf(Constructor("X", TupType(listOf(TupField(ConType(q("Int")), "a", false)))))),
-    "data X = X | Y | Z(Int)" to DataDecl(SimpleType("X", emptyList()), listOf(Constructor("X", null), Constructor("Y", null), Constructor("Z", ConType(q("Int"))))),
-    "fn test(a: Int, b: Int) = a + b" to FunDecl("test", listOf(Arg("a", ConType(q("Int"))), Arg("b", ConType(q("Int")))), null, InfixExpr("+", v("a"), v("b"))),
-    "foreign fn createElement(name: String, options: Any) -> Any" to ForeignDecl("createElement", "createElement", FunType(listOf(ArgDecl("name", ConType(q("String"))), ArgDecl("options", ConType(q("Any")))), ConType(q("Any")))),
+    "data X(a) = X {a: Int}" to DataDecl(SimpleType("X", listOf("a")), listOf(Con("X", TupType(listOf(TupField(ConType(q("Int")), "a", false)))))),
+    "data X = X | Y | Z(Int)" to DataDecl(SimpleType("X", emptyList()), listOf(Con("X", null), Con("Y", null), Con("Z", ConType(q("Int"))))),
+    "fn test(a: Int, b: Int) = a + b" to FunDecl("test", listOf(Arg("a", ConType(q("Int")), null), Arg("b", ConType(q("Int")), null)), null, InfixExpr(VarExpr(q("+")), v("a"), v("b"))),
+    "foreign fn createElement(name: String, options: Any) -> Any" to ForeignDecl("createElement", "createElement", null, FunType(listOf(ArgDecl("name", ConType(q("String"))), ArgDecl("options", ConType(q("Any")))), ConType(q("Any")))),
     "foreign document: Dom.Doc as doc" to ForeignDecl("document", "doc", null, ConType(Qualified("Doc", listOf("Dom"), false)))
 )
 
