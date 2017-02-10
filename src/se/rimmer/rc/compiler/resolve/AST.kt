@@ -5,6 +5,7 @@ import se.rimmer.rc.compiler.parser.ForeignDecl
 import se.rimmer.rc.compiler.parser.Literal
 import se.rimmer.rc.compiler.parser.Qualified
 import java.util.*
+import kotlin.collections.HashMap
 import se.rimmer.rc.compiler.parser.ArrayType as ASTArrayType
 import se.rimmer.rc.compiler.parser.MapType as ASTMapType
 import se.rimmer.rc.compiler.parser.TupType as ASTTupType
@@ -59,10 +60,19 @@ class GenType(val index: Int): Type {
     val fields = HashMap<String, GenField>()
 }
 
-enum class Primitive(val sourceName: kotlin.String) { Int("Int"), Double("Double"), Bool("Bool"), String("String") }
-data class PrimType(val prim: Primitive): Type
+typealias GenMap = HashMap<String, GenType>
 
-data class AliasType(var ast: ASTTypeDecl?, val generics: List<GenType>, var to: Type): Type
+data class IntType(val width: Int, val signed: Boolean): Type
+data class FloatType(val width: Int): Type
+data class VecType(val type: Type, val width: Int): Type
+class StringType: Type
+
+val boolType = IntType(1, false)
+
+data class AliasType(var ast: ASTTypeDecl?, var to: Type): Type {
+    val generics = GenMap()
+}
+
 data class RefType(val to: Type): Type
 
 data class FunArg(val name: String?, val index: Int, val type: Type)
@@ -70,9 +80,16 @@ data class FunType(val args: List<FunArg>, val result: Type): Type
 
 enum class RecordKind { Enum, Single, Multi }
 
-data class RecordType(var ast: DataDecl?, val generics: List<GenType>): Type {
+/**
+ * A named, distinct ADT.
+ * Special cases include enums (constructors only, no data) and structs (exactly one constructor with data inside).
+ * @param derivedFrom If this is a specialisation of a generic version of the same type,
+ * this indicates the base type that can be used for implicit conversions.
+ */
+data class RecordType(var ast: DataDecl?, val derivedFrom: RecordType?): Type {
     var kind = RecordKind.Multi
     val constructors = ArrayList<Con>()
+    val generics = GenMap()
 }
 
 class Field(val name: String?, val index: Int, val type: Type, val container: Type, val mutable: Boolean)
@@ -167,6 +184,39 @@ class Lit(block: Block, name: String?, type: Type, val literal: Literal): Value(
 
 // A single operation that can be performed inside a function block.
 open class Inst(block: Block, name: String?, type: Type, val usedValues: List<Value>): Value(block, name, type)
+
+/*
+ * Conversion instructions
+ */
+
+/** Truncates an integer/float or vector to a lower bit width */
+class TruncInst(block: Block, name: String?, val from: Value, target: Type): Inst(block, name, target, listOf(from))
+
+/** Widens an integer/float or vector to a higher bit width, filling the new space with either zeroes or the sign bit depending on the type. */
+class WidenInst(block: Block, name: String?, val from: Value, target: Type): Inst(block, name, target, listOf(from))
+
+class FloatToIntInst(block: Block, name: String?, val from: Value, type: IntType): Inst(block, name, type, listOf(from))
+class IntToFloatInst(block: Block, name: String?, val from: Value, type: FloatType): Inst(block, name, type, listOf(from))
+
+/*
+ * Arithmetic instructions - these must be performed on two integers, float or vectors of the same type.
+ */
+class AddInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class SubInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class MulInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class DivInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+
+enum class Cmp { eq, neq, gt, ge, lt, le }
+class CmpInst(block: Block, name: String?, val lhs: Value, val rhs: Value, val cmp: Cmp): Inst(block, name, boolType, listOf(rhs, lhs))
+
+/*
+ * Bitwise instructions - must be performed on integer types or integer vectors
+ */
+class ShlInst(block: Block, name: String?, val arg: Value, val amount: Value): Inst(block, name, arg.type, listOf(arg, amount))
+class ShrInst(block: Block, name: String?, val arg: Value, val amount: Value): Inst(block, name, arg.type, listOf(arg, amount))
+class AndInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class OrInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class XorInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
 
 /* Stack instructions. */
 class AllocaInst(block: Block, name: String?, type: Type): Inst(block, name, type, emptyList())

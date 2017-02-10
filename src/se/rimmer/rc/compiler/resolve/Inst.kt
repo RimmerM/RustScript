@@ -69,6 +69,8 @@ fun Block.primOp(name: String?, op: PrimOp, arg: Value) = inst {
     PrimInst(this, name, unaryOpType(op, arg.type), op, listOf(arg))
 }
 
+fun Block.cast(name: String?, )
+
 fun Block.alloca(name: String?, type: Type) = inst {
     AllocaInst(this, name, RefType(type))
 }
@@ -79,6 +81,22 @@ fun Block.load(name: String?, ref: Value) = inst {
 
 fun Block.store(name: String?, ref: Value, value: Value) = inst {
     StoreInst(this, name, value, ref)
+}
+
+fun Block.loadField(name: String?, from: Value, field: Int, fieldType: Type) = inst {
+    LoadFieldInst(this, name, fieldType, from, field)
+}
+
+fun Block.storeField(name: String?, value: Value, field: Int, fieldValue: Value) = inst {
+    StoreFieldInst(this, name, fieldValue, value, field)
+}
+
+fun Block.getField(name: String?, from: Value, field: Int, fieldType: Type) = inst {
+    GetFieldInst(this, name, fieldType, from, field)
+}
+
+fun Block.updateField(name: String?, value: Value, updates: List<Pair<Int, Value>>) = inst {
+    UpdateFieldInst(this, name, value, updates)
 }
 
 fun Block.call(name: String?, function: Function, args: List<Value>) = inst {
@@ -99,4 +117,16 @@ fun Block.br(to: Block) = inst {
 
 fun Block.phi(name: String?, type: Type, alts: List<Pair<Value, Block>>) = inst {
     PhiInst(this, name, type, alts)
+}
+
+fun Block.tup(name: String?, type: TupType, fields: List<Value>) = inst {
+    TupInst(this, name, type, fields)
+}
+
+fun Block.array(name: String?, type: ArrayType, values: List<Value>) = inst {
+    ArrayInst(this, name, type, values)
+}
+
+fun Block.map(name: String?, type: MapType, values: List<Pair<Value, Value>>) = inst {
+    MapInst(this, name, type, values)
 }

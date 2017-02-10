@@ -73,6 +73,11 @@ private fun FunctionBuilder.resolveMulti(ast: ASTMultiExpr, name: String?, resul
     }
 }
 
+private fun FunctionBuilder.makeHomogeneous(name: String?, exprs: List<ASTExpr>, typeHint: Type?): List<Value> {
+    // TODO: Handle generics and return type polymorphism
+    return exprs.map { resolveExpr(it, name, true, typeHint) }
+}
+
 private fun FunctionBuilder.resolveReturn(ast: ASTReturnExpr): Value {
     return block.ret(resolveExpr(ast.expr, null, true, null))
 }
@@ -255,7 +260,9 @@ private fun FunctionBuilder.resolveCall(name: String?, ast: ASTAppExpr, typeHint
     // - the field operand is an actual field of its target and has a function type, which we call.
     // - the field operand is not a field, and we produce a function call with the target as first parameter.
     if(ast.callee is ASTFieldExpr) {
-
+        val target = resolveExpr(ast.callee.target, null, true, null)
+        val static = testStaticField(null, target, ast.callee.field)
+        if(static != null) return resolveDynCall(name, static, ast.args)
     }
 
     val args = ast.args.map { resolveExpr(it.content, null, true, null) }
@@ -263,6 +270,12 @@ private fun FunctionBuilder.resolveCall(name: String?, ast: ASTAppExpr, typeHint
         testPrimOp(ast.callee.name, name, args)?.let { return it }
     }
 
+    throw NotImplementedError()
+}
+
+private fun FunctionBuilder.resolve
+
+private fun FunctionBuilder.resolveDynCall(name: String?, value: Value, args: List<TupArg>): Value {
     throw NotImplementedError()
 }
 
@@ -281,15 +294,60 @@ private fun FunctionBuilder.resolveInfix(name: String?, unorderedAst: ASTInfixEx
 }
 
 private fun FunctionBuilder.resolveField(name: String?, ast: ASTFieldExpr): Value {
-    throw NotImplementedError()
+    val target = resolveExpr(ast.target, null, true, null)
+    val static = testStaticField(name, target, ast.field)
+    if(static != null) return static
+
+    // TODO: Array & Map types.
+    throw ResolveError("type ${target.type} does not contain the requested field")
+}
+
+private fun FunctionBuilder.testStaticField(name: String?, target: Value, ast: ASTExpr): Value? {
+    val targetType = canonicalType(target.type)
+    val staticField = when(ast) {
+        is ASTVarExpr -> {
+            val n = ast.name
+            if(n.qualifier.isEmpty() && n.isVar) {
+                findStaticField(targetType, n.name, null)
+            } else {
+                null
+            }
+        }
+        is ASTLitExpr -> {
+            if(ast.literal is StringLiteral) {
+                findStaticField(targetType, ast.literal.v, null)
+            } else if(ast.literal is IntLiteral) {
+                findStaticField(targetType, null, ast.literal.v.toInt())
+            } else {
+                null
+            }
+        }
+        else -> null
+    } ?: return null
+
+    when(target.type) {
+        is RefType -> return block.loadField(name, target, staticField.index, staticField.type)
+        else -> return block.getField(name, target, staticField.index, staticField.type)
+    }
 }
 
 private fun FunctionBuilder.resolveFun(name: String?, ast: ASTFunExpr): Value {
     throw NotImplementedError()
 }
 
-private fun FunctionBuilder.resolveArray(name: String?, ast: ASTArrayExpr): Value {
-    throw NotImplementedError()
+private fun FunctionBuilder.resolveArray(name: String?, ast: ASTArrayExpr, typeHint: Type?): Value {
+    val values = makeHomogeneous(null, ast.values, null)
+    val type = if(values.isEmpty()) {
+        if(typeHint is ArrayType) {
+            ArrayType(typeHint.content)
+        } else {
+            throw NotImplementedError("cannot resolve undetermined expressions yet")
+        }
+    } else {
+        values[0].type
+    }
+
+    return block.array(name, ArrayType(type), values)
 }
 
 private fun FunctionBuilder.resolveMap(name: String?, ast: ASTMapExpr): Value {
@@ -301,19 +359,42 @@ private fun FunctionBuilder.resolveFormat(name: String?, ast: ASTFormatExpr): Va
 }
 
 private fun FunctionBuilder.resolveCoerce(name: String?, ast: ASTCoerceExpr): Value {
-    throw NotImplementedError()
+    val to = resolveType(function.module, ast.type, null)
+    val expr = resolveExpr(ast.target, null, true, to)
+    if(!typesCompatible(expr.type, to)) {
+
+    }
 }
 
 private fun FunctionBuilder.resolveConstruct(name: String?, ast: ASTConstructExpr): Value {
-    throw NotImplementedError()
+    val type = resolveType(function.module, ast.type, null)
+    when(type) {
+        is RecordType -> {
+
+        }
+        is AliasType -> {
+
+        }
+        is PrimType -> {
+
+        }
+    }
 }
 
 private fun FunctionBuilder.resolveTup(name: String?, ast: ASTTupExpr): Value {
-    throw NotImplementedError()
+    val args = ArrayList<Value>()
+    val type = TupType()
+    ast.args.forEachIndexed { i, it ->
+        val v = resolveExpr(it.content, null, true, null)
+        args.add(v)
+        type.fields.add(Field(it.name, i, v.type, type, v.type is RefType))
+    }
+    return block.tup(name, type, args)
 }
 
 private fun FunctionBuilder.resolveTupUpdate(name: String?, ast: ASTTupUpdateExpr): Value {
-    throw NotImplementedError()
+    val target = resolveExpr(ast.value, null, true, null)
+
 }
 
 private fun FunctionBuilder.resolveCase(name: String?, ast: ASTCaseExpr, resultUsed: Boolean): Value {
@@ -380,4 +461,41 @@ private fun reorder(module: Module, ast: ASTInfixExpr, min: Int): ASTInfixExpr {
 private fun alwaysTrue(v: Value) = when(v) {
     is Lit -> v.literal is BoolLiteral && v.literal.v
     else -> false
+}
+
+// Tries to convert between types.
+private fun FunctionBuilder.testConvert(from: Value, to: Type): Value? {
+    when(from.type) {
+        is PrimType
+    }
+}
+
+// Returns an applicable field inside a static aggregate type, if any.
+private fun findStaticField(type: Type, stringField: String?, intField: Int?): Field? {
+   if(type is TupType) {
+        type.fields.forEachIndexed { i, it ->
+            if(it.name == stringField) {
+                return it
+            }
+
+            if(i == intField) {
+                return it
+            }
+        }
+    }
+    return null
+}
+
+// Returns the type that a particular type would behave as for lookup purposes.
+private fun canonicalType(it: Type): Type {
+    when(it) {
+        is RefType -> return it.to
+        is RecordType -> {
+            if(it.constructors.size == 1) {
+                it.constructors.first().content?.let { return it }
+            }
+            return it
+        }
+        else -> return it
+    }
 }
