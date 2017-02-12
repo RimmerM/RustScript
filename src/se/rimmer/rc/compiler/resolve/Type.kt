@@ -72,8 +72,8 @@ class TypeClass(val name: Qualified) {
     val functions = HashMap<String, FunType>()
 }
 
-class ClassInstance(val module: Module, val types: List<Type>, val typeClass: TypeClass) {
-    val implementations = HashMap<String, Function>()
+class ClassInstance(val module: Module, val typeClass: TypeClass, val forType: Type) {
+    val implementations = IdentityHashMap<FunType, Function>()
 }
 
 object PrimTypes {
@@ -83,11 +83,7 @@ object PrimTypes {
 
     val intType = int(32, true)
     val stringType = StringType()
-    val boolType = unsignedIntTypes.let {
-        val type = IntType(1, IntKind.Bool)
-        unsignedIntTypes[0] = type
-        type
-    }
+    val boolType = IntType(1, IntKind.Bool).apply { unsignedIntTypes[0] = this }
 
     fun int(width: Int, signed: Boolean): IntType {
         if(width > 64) throw IllegalArgumentException("invalid integer size")

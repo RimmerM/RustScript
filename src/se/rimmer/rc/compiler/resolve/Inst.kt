@@ -47,11 +47,12 @@ class AddInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst
 class SubInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
 class MulInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
 class DivInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
-class IDivInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class DivUInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
 class RemInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
 
 enum class Cmp { eq, neq, gt, ge, lt, le }
-class CmpInst(block: Block, name: String?, val lhs: Value, val rhs: Value, val cmp: Cmp, val unsigned: Boolean): Inst(block, name, PrimTypes.boolType, listOf(rhs, lhs))
+class CmpInst(block: Block, name: String?, val lhs: Value, val rhs: Value, val cmp: Cmp): Inst(block, name, PrimTypes.boolType, listOf(rhs, lhs))
+class CmpUInst(block: Block, name: String?, val lhs: Value, val rhs: Value, val cmp: Cmp): Inst(block, name, PrimTypes.boolType, listOf(rhs, lhs))
 
 /*
  * Bitwise instructions - must be performed on integer types or integer vectors

@@ -1,7 +1,6 @@
 package se.rimmer.rc.compiler.resolve
 
 import se.rimmer.rc.compiler.parser.ForeignDecl
-import se.rimmer.rc.compiler.parser.FunDecl
 import se.rimmer.rc.compiler.parser.Qualified
 
 data class Operator(val precedence: Int, val isRight: Boolean)
@@ -43,6 +42,6 @@ fun Function.block(): Block {
     return block
 }
 
-class FunctionBuilder(val ast: FunDecl, val function: Function) {
+class FunctionBuilder(val function: Function) {
     var block = function.body
 }

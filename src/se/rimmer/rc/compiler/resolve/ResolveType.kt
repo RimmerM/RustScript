@@ -1,6 +1,5 @@
 package se.rimmer.rc.compiler.resolve
 
-import se.rimmer.rc.compiler.parser.SimpleType
 import se.rimmer.rc.compiler.parser.extend
 import se.rimmer.rc.compiler.parser.AppType as ASTAppType
 import se.rimmer.rc.compiler.parser.ArrayType as ASTArrayType
@@ -34,8 +33,14 @@ fun resolveTypes(module: Module, decls: List<ASTDecl>) {
                     throw ResolveError("redefinition of type ${it.type.name}")
                 }
 
+                val name = it.type.name
+                val record = RecordType(it, module.name.extend(name), null)
+
+                it.type.kind.forEachIndexed { i, it ->
+                    record.generics[it] = GenType(i)
+                }
+
                 // The constructors are declared here, but resolved later.
-                val record = RecordType(it, it.type.kind.mapIndexed { i, _ -> GenType(i)})
                 val cons = it.cons.mapIndexed { i, (name) -> Con(module.name.extend(name), i, record) }
                 cons.forEach {
                     if(module.constructors.containsKey(it.name.name)) {
@@ -45,7 +50,7 @@ fun resolveTypes(module: Module, decls: List<ASTDecl>) {
                 }
 
                 record.constructors.addAll(cons)
-                module.types[it.type.name] = record
+                module.types[name] = record
             }
         }
     }
@@ -83,13 +88,6 @@ fun resolveType(module: Module, type: ASTType, gen: GenMap?): Type {
 fun resolveConType(module: Module, type: ASTConType, gen: GenMap?): Type {
     // Try to find a user-defined type first.
     module.findType(type.name)?.let { return it }
-
-    // Check for builtin types.
-    if(type.name.qualifier.isEmpty()) {
-        val primitive = primitiveTypes.firstOrNull { it.prim.sourceName == type.name.name }
-        if(primitive != null) return primitive
-    }
-
     throw ResolveError("unresolved type name ${type.name}")
 }
 
@@ -149,7 +147,9 @@ fun resolveGenType(module: Module, type: ASTGenType, gen: GenMap?): Type {
 fun typesCompatible(a: Type, b: Type): Boolean {
     if(a === b) return true
     return when(a) {
-        is PrimType -> b is PrimType && a.prim == b.prim
+        is IntType -> b is IntType && a.kind === b.kind
+        is FloatType -> b is FloatType && a.kind === b.kind
+        is StringType -> b is StringType
         is UnitType -> b is UnitType
         is ErrorType -> b is ErrorType
         is RefType -> b is RefType && typesCompatible(a.to, b.to)
@@ -159,7 +159,7 @@ fun typesCompatible(a: Type, b: Type): Boolean {
 
 private fun instantiateType(module: Module, type: Type, gen: GenMap): Type {
     return when(type) {
-        is UnitType, is ErrorType, is PrimType -> type
+        is UnitType, is ErrorType, is IntType, is FloatType, is StringType -> type
         is RefType -> RefType(instantiateType(module, type.to, context))
         is AliasType -> {
             instantiateType(module, type, context)

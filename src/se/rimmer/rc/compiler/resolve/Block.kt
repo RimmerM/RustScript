@@ -116,16 +116,20 @@ fun Block.div(name: String?, lhs: Value, rhs: Value) = inst {
     DivInst(this, name, lhs, rhs)
 }
 
-fun Block.idiv(name: String?, lhs: Value, rhs: Value) = inst {
-    IDivInst(this, name, lhs, rhs)
+fun Block.divu(name: String?, lhs: Value, rhs: Value) = inst {
+    DivUInst(this, name, lhs, rhs)
 }
 
 fun Block.rem(name: String?, lhs: Value, rhs: Value) = inst {
     RemInst(this, name, lhs, rhs)
 }
 
-fun Block.cmp(name: String?, cmp: Cmp, unsigned: Boolean, lhs: Value, rhs: Value) = inst {
-    CmpInst(this, name, lhs, rhs, cmp, unsigned)
+fun Block.cmp(name: String?, cmp: Cmp, lhs: Value, rhs: Value) = inst {
+    CmpInst(this, name, lhs, rhs, cmp)
+}
+
+fun Block.cmpu(name: String?, cmp: Cmp, lhs: Value, rhs: Value) = inst {
+    CmpUInst(this, name, lhs, rhs, cmp)
 }
 
 fun Block.shl(name: String?, v: Value, amount: Value) = inst {
@@ -210,4 +214,8 @@ fun Block.array(name: String?, type: ArrayType, values: List<Value>) = inst {
 
 fun Block.map(name: String?, type: MapType, values: List<Pair<Value, Value>>) = inst {
     MapInst(this, name, type, values)
+}
+
+fun Block.record(name: String?, type: RecordType, con: Con, fields: List<Value>) = inst {
+    RecordInst(this, name, type, con, fields)
 }

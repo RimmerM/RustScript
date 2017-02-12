@@ -62,9 +62,15 @@ fun Module.defineClass(name: String): TypeClass {
 }
 
 fun Module.defineInstance(to: TypeClass, type: Type): ClassInstance {
-    val i = ClassInstance(this, listOf(type), to)
+    val i = ClassInstance(this, to, type)
     typeInstances[to] = i
     return i
+}
+
+fun ClassInstance.defineImpl(to: FunType): Function {
+    val f = module.defineFun("${typeClass.name.name}$${module.functions.size}")
+    implementations[to] = f
+    return f
 }
 
 fun Module.defineFun(name: String): Function {
@@ -73,9 +79,10 @@ fun Module.defineFun(name: String): Function {
     return f
 }
 
-fun TypeClass.defineFun(name: String, ret: Type, vararg args: Pair<String, Type>) {
+fun TypeClass.defineFun(name: String, ret: Type, vararg args: Pair<String, Type>): FunType {
     val f = FunType(args.mapIndexed { i, it -> FunArg(it.first, i, it.second) }, ret)
     functions[name] = f
+    return f
 }
 
 fun Function.defineArg(name: String, type: Type): Arg {
