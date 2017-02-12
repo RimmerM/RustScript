@@ -1,132 +1,101 @@
 package se.rimmer.rc.compiler.resolve
 
-import se.rimmer.rc.compiler.parser.Qualified
+import se.rimmer.rc.compiler.parser.Literal
+import java.util.*
+
+// A single usage of a value by an instruction.
+data class Use(val value: Value, val user: Inst)
+
+// A local register containing the result of some operation.
+open class Value(val block: Block, val name: String?, val type: Type) {
+    // Each instruction that uses this value.
+    val uses = ArrayList<Use>()
+
+    // Each block this value is used by.
+    val blockUses: MutableSet<Block> = Collections.newSetFromMap(IdentityHashMap<Block, Boolean>())
+
+    // Data for use by the code generator.
+    var codegen: Any? = null
+}
+
+// An immediate value that can be used by instructions.
+class Lit(block: Block, name: String?, type: Type, val literal: Literal): Value(block, name, type)
+
+// A value provided through a function parameter.
+class Arg(block: Block, name: String?, type: Type, val index: Int): Value(block, name, type)
+
+// A single operation that can be performed inside a function block.
+open class Inst(block: Block, name: String?, type: Type, val usedValues: List<Value>): Value(block, name, type)
+
+/*
+ * Conversion instructions
+ */
+
+/** Truncates an integer/float or vector to a lower bit width */
+class TruncInst(block: Block, name: String?, val from: Value, target: Type): Inst(block, name, target, listOf(from))
+
+/** Widens an integer/float or vector to a higher bit width, filling the new space with either zeroes or the sign bit depending on the type. */
+class WidenInst(block: Block, name: String?, val from: Value, target: Type): Inst(block, name, target, listOf(from))
+
+class FloatToIntInst(block: Block, name: String?, val from: Value, type: IntType): Inst(block, name, type, listOf(from))
+class IntToFloatInst(block: Block, name: String?, val from: Value, type: FloatType): Inst(block, name, type, listOf(from))
+
+/*
+ * Arithmetic instructions - these must be performed on two integers, float or vectors of the same type.
+ */
+class AddInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class SubInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class MulInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class DivInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class IDivInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class RemInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+
+enum class Cmp { eq, neq, gt, ge, lt, le }
+class CmpInst(block: Block, name: String?, val lhs: Value, val rhs: Value, val cmp: Cmp, val unsigned: Boolean): Inst(block, name, PrimTypes.boolType, listOf(rhs, lhs))
+
+/*
+ * Bitwise instructions - must be performed on integer types or integer vectors
+ */
+class ShlInst(block: Block, name: String?, val arg: Value, val amount: Value): Inst(block, name, arg.type, listOf(arg, amount))
+class ShrInst(block: Block, name: String?, val arg: Value, val amount: Value): Inst(block, name, arg.type, listOf(arg, amount))
+class AShrInst(block: Block, name: String?, val arg: Value, val amount: Value): Inst(block, name, arg.type, listOf(arg, amount))
+class AndInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class OrInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+class XorInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
+
+/* Stack instructions. */
+class AllocaInst(block: Block, name: String?, type: Type): Inst(block, name, type, emptyList())
+class LoadInst(block: Block, name: String?, type: Type, val value: Value): Inst(block, name, type, listOf(value))
+class StoreInst(block: Block, name: String?, val value: Value, val to: Value): Inst(block, name, unitType, listOf(value, to))
+class LoadFieldInst(block: Block, name: String?, type: Type, val from: Value, val field: Int): Inst(block, name, type, listOf(from))
+class StoreFieldInst(block: Block, name: String?, val value: Value, val to: Value, val field: Int): Inst(block, name, unitType, listOf(value, to))
+
+/* Construction instructions. */
+class RecordInst(block: Block, name: String?, type: RecordType, val con: Con, val fields: List<Value>): Inst(block, name, type, fields)
+class TupInst(block: Block, name: String?, type: TupType, val fields: List<Value>): Inst(block, name, type, fields)
+class ArrayInst(block: Block, name: String?, type: ArrayType, val values: List<Value>): Inst(block, name, type, values)
+class MapInst(block: Block, name: String?, type: MapType, val pairs: List<Pair<Value, Value>>): Inst(block, name, type, pairs.flatMap { it.toList() })
+class FunInst(block: Block, name: String?, type: FunType, val function: Function, val captures: List<Value>): Inst(block, name, type, captures)
+
+/* Operation instructions. */
+class CallInst(block: Block, name: String?, val function: Function, val args: List<Value>): Inst(block, name, function.returnType!!, args)
+class CallDynInst(block: Block, name: String?, type: Type, val function: Value, val args: List<Value>): Inst(block, name, type, args)
+class CallForeignInst(block: Block, name: String?, type: Type, val function: ForeignFunction, val args: List<Value>): Inst(block, name, type, args)
+class CastPrimInst(block: Block, name: String?, type: Type, val source: Value): Inst(block, name, type, listOf(source))
+
+/* Record value instructions. */
+class GetFieldInst(block: Block, name: String?, type: Type, val from: Value, val field: Int): Inst(block, name, type, listOf(from))
+class UpdateFieldInst(block: Block, name: String?, val from: Value, val updates: List<Pair<Int, Value>>): Inst(block, name, from.type, updates.map {it.second} + from)
+
+/* Control flow. */
+class IfInst(block: Block, name: String?, val condition: Value, val then: Block, val otherwise: Block): Inst(block, name, unitType, listOf(condition))
+class BrInst(block: Block, name: String?, val to: Block): Inst(block, name, unitType, emptyList())
+class RetInst(block: Block, val value: Value): Inst(block, null, value.type, listOf(value))
+class PhiInst(block: Block, name: String?, type: Type, val values: List<Pair<Value, Block>>): Inst(block, name, type, values.map { it.first })
 
 val Inst.isTerminating: Boolean get() = when(this) {
     is RetInst -> true
     is IfInst -> true
     is BrInst -> true
     else -> false
-}
-
-val Block.isFirst: Boolean get() = incoming.isEmpty()
-val Block.isLast: Boolean get() = outgoing.isEmpty()
-
-// Finds an initialized value in this block.
-fun Block.findValue(name: Qualified): Value? {
-    if(name.qualifier.isEmpty()) {
-        namedValues[name.name]?.let { return it }
-        preceding?.let { return it.findValue(name) }
-        function.args[name.name]?.let { return it }
-    }
-
-    // TODO: Global variables
-    return null
-}
-
-private fun Block.use(value: Value, user: Inst): Value {
-    value.uses.add(Use(value, user))
-    value.blockUses.add(this)
-    return value
-}
-
-private inline fun Block.inst(f: Block.() -> Inst): Inst {
-    val inst = f()
-    inst.usedValues.forEach { use(it, inst) }
-
-    if(!complete) {
-        instructions.add(inst)
-
-        if(inst.name != null) {
-            namedValues[inst.name] = inst
-        }
-
-        if(inst.isTerminating) {
-            complete = true
-        }
-
-        if(inst is RetInst) {
-            returns = true
-            function.returns.add(inst)
-        } else if(inst is IfInst) {
-            outgoing.add(inst.then)
-            outgoing.add(inst.otherwise)
-            inst.then.incoming.add(this)
-            inst.otherwise.incoming.add(this)
-        } else if(inst is BrInst) {
-            outgoing.add(inst.to)
-            inst.to.incoming.add(this)
-        }
-    }
-    return inst
-}
-
-fun Block.primOp(name: String?, op: PrimOp, lhs: Value, rhs: Value) = inst {
-    PrimInst(this, name, binaryOpType(op, lhs.type, rhs.type), op, listOf(lhs, rhs))
-}
-
-fun Block.primOp(name: String?, op: PrimOp, arg: Value) = inst {
-    PrimInst(this, name, unaryOpType(op, arg.type), op, listOf(arg))
-}
-
-fun Block.cast(name: String?, )
-
-fun Block.alloca(name: String?, type: Type) = inst {
-    AllocaInst(this, name, RefType(type))
-}
-
-fun Block.load(name: String?, ref: Value) = inst {
-    LoadInst(this, name, (ref.type as RefType).to, ref)
-}
-
-fun Block.store(name: String?, ref: Value, value: Value) = inst {
-    StoreInst(this, name, value, ref)
-}
-
-fun Block.loadField(name: String?, from: Value, field: Int, fieldType: Type) = inst {
-    LoadFieldInst(this, name, fieldType, from, field)
-}
-
-fun Block.storeField(name: String?, value: Value, field: Int, fieldValue: Value) = inst {
-    StoreFieldInst(this, name, fieldValue, value, field)
-}
-
-fun Block.getField(name: String?, from: Value, field: Int, fieldType: Type) = inst {
-    GetFieldInst(this, name, fieldType, from, field)
-}
-
-fun Block.updateField(name: String?, value: Value, updates: List<Pair<Int, Value>>) = inst {
-    UpdateFieldInst(this, name, value, updates)
-}
-
-fun Block.call(name: String?, function: Function, args: List<Value>) = inst {
-    CallInst(this, name, function, args)
-}
-
-fun Block.ret(value: Value) = inst {
-    RetInst(this, value)
-}
-
-fun Block.`if`(condition: Value, then: Block, otherwise: Block) = inst {
-    IfInst(this, null, condition, then, otherwise)
-}
-
-fun Block.br(to: Block) = inst {
-    BrInst(this, null, to)
-}
-
-fun Block.phi(name: String?, type: Type, alts: List<Pair<Value, Block>>) = inst {
-    PhiInst(this, name, type, alts)
-}
-
-fun Block.tup(name: String?, type: TupType, fields: List<Value>) = inst {
-    TupInst(this, name, type, fields)
-}
-
-fun Block.array(name: String?, type: ArrayType, values: List<Value>) = inst {
-    ArrayInst(this, name, type, values)
-}
-
-fun Block.map(name: String?, type: MapType, values: List<Pair<Value, Value>>) = inst {
-    MapInst(this, name, type, values)
 }

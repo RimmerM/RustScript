@@ -47,7 +47,7 @@ fun FunctionBuilder.resolveExpr(ast: ASTExpr, name: String?, resultUsed: Boolean
         is ASTConstructExpr -> resolveConstruct(name, ast)
         is ASTTupExpr -> resolveTup(name, ast)
         is ASTTupUpdateExpr -> resolveTupUpdate(name, ast)
-        is ASTArrayExpr -> resolveArray(name, ast)
+        is ASTArrayExpr -> resolveArray(name, ast, typeHint)
         is ASTMapExpr -> resolveMap(name, ast)
         is ASTFunExpr -> resolveFun(name, ast)
         is ASTFormatExpr -> resolveFormat(name, ast)
@@ -84,11 +84,11 @@ private fun FunctionBuilder.resolveReturn(ast: ASTReturnExpr): Value {
 
 private fun FunctionBuilder.resolveLit(name: String?, ast: ASTLitExpr): Value {
     val type = when(ast.literal) {
-        is IntLiteral -> primitiveTypes[Primitive.Int.ordinal]
-        is RationalLiteral -> primitiveTypes[Primitive.Double.ordinal]
-        is BoolLiteral -> primitiveTypes[Primitive.Bool.ordinal]
-        is StringLiteral -> primitiveTypes[Primitive.String.ordinal]
-        is CharLiteral -> primitiveTypes[Primitive.Int.ordinal]
+        is IntLiteral -> PrimTypes.intType
+        is RationalLiteral -> PrimTypes.float(FloatKind.F64)
+        is BoolLiteral -> PrimTypes.boolType
+        is StringLiteral -> PrimTypes.stringType
+        is CharLiteral -> PrimTypes.intType
         else -> throw NotImplementedError()
     }
     return Lit(block, name, type, ast.literal)
@@ -131,7 +131,7 @@ private fun FunctionBuilder.resolveAssign(ast: ASTAssignExpr) = when(ast.target)
 
 private fun FunctionBuilder.resolveIf(name: String?, ast: ASTIfExpr, resultUsed: Boolean, typeHint: Type?): Value {
     val hint = if(resultUsed) typeHint else null
-    val cond = resolveExpr(ast.cond, null, resultUsed, booleanType)
+    val cond = resolveExpr(ast.cond, null, resultUsed, PrimTypes.boolType)
     if(!cond.type.isBoolean()) throw ResolveError("if condition must be a boolean")
 
     val then = function.block()
@@ -183,7 +183,7 @@ private fun FunctionBuilder.resolveMultiIf(name: String?, ast: ASTMultiIfExpr, r
     var hasElse = false
 
     for(it in ast.cases) {
-        val cond = resolveExpr(it.cond, null, true, booleanType)
+        val cond = resolveExpr(it.cond, null, true, PrimTypes.boolType)
         if(!cond.type.isBoolean()) throw ResolveError("if condition must be a boolean")
 
         if(alwaysTrue(cond)) {
@@ -242,7 +242,7 @@ private fun FunctionBuilder.resolveWhile(name: String?, ast: ASTWhileExpr): Valu
     val condBlock = function.block()
     block.br(condBlock)
     block = condBlock
-    val cond = resolveExpr(ast.cond, null, true, booleanType)
+    val cond = resolveExpr(ast.cond, null, true, PrimTypes.boolType)
 
     val thenBlock = function.block()
     val quit = function.block()
@@ -267,13 +267,11 @@ private fun FunctionBuilder.resolveCall(name: String?, ast: ASTAppExpr, typeHint
 
     val args = ast.args.map { resolveExpr(it.content, null, true, null) }
     if(ast.callee is ASTVarExpr) {
-        testPrimOp(ast.callee.name, name, args)?.let { return it }
+
     }
 
     throw NotImplementedError()
 }
-
-private fun FunctionBuilder.resolve
 
 private fun FunctionBuilder.resolveDynCall(name: String?, value: Value, args: List<TupArg>): Value {
     throw NotImplementedError()
@@ -364,6 +362,8 @@ private fun FunctionBuilder.resolveCoerce(name: String?, ast: ASTCoerceExpr): Va
     if(!typesCompatible(expr.type, to)) {
 
     }
+
+    throw NotImplementedError()
 }
 
 private fun FunctionBuilder.resolveConstruct(name: String?, ast: ASTConstructExpr): Value {
@@ -375,10 +375,9 @@ private fun FunctionBuilder.resolveConstruct(name: String?, ast: ASTConstructExp
         is AliasType -> {
 
         }
-        is PrimType -> {
-
-        }
     }
+
+    throw NotImplementedError()
 }
 
 private fun FunctionBuilder.resolveTup(name: String?, ast: ASTTupExpr): Value {
@@ -394,43 +393,16 @@ private fun FunctionBuilder.resolveTup(name: String?, ast: ASTTupExpr): Value {
 
 private fun FunctionBuilder.resolveTupUpdate(name: String?, ast: ASTTupUpdateExpr): Value {
     val target = resolveExpr(ast.value, null, true, null)
-
+    throw NotImplementedError()
 }
 
 private fun FunctionBuilder.resolveCase(name: String?, ast: ASTCaseExpr, resultUsed: Boolean): Value {
     throw NotImplementedError()
 }
 
-private fun FunctionBuilder.testPrimOp(funName: Qualified, name: String?, args: List<Value>): Value? {
-    // Check if this can be a primitive operation.
-    // Note that primitive operations can be both functions and operators.
-    if(args.size == 1) {
-        if(args[0].type is PrimType && funName.qualifier.isEmpty()) {
-            primUnaryOps[funName.name]?.let {
-                return block.primOp(name, it.second, args[0])
-            }
-        }
-    } else if(args.size == 2) {
-        val lhs = args[0]
-        val rhs = args[1]
-        if(lhs.type is PrimType && rhs.type is PrimType && funName.qualifier.isEmpty()) {
-            primBinaryOps[funName.name]?.let {
-                return block.primOp(name, it.second, lhs, rhs)
-            }
-        }
-    }
-    return null
-}
-
 private fun opInfo(module: Module, name: Qualified): Operator {
     val op = module.findOperator(name)
     if(op != null) return op
-
-    if(name.qualifier.isEmpty()) {
-        val prim = primOps[name.name]
-        if(prim != null) return prim.first
-    }
-
     return Operator(9, false)
 }
 
@@ -461,13 +433,6 @@ private fun reorder(module: Module, ast: ASTInfixExpr, min: Int): ASTInfixExpr {
 private fun alwaysTrue(v: Value) = when(v) {
     is Lit -> v.literal is BoolLiteral && v.literal.v
     else -> false
-}
-
-// Tries to convert between types.
-private fun FunctionBuilder.testConvert(from: Value, to: Type): Value? {
-    when(from.type) {
-        is PrimType
-    }
 }
 
 // Returns an applicable field inside a static aggregate type, if any.
