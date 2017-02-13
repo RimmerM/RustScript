@@ -140,8 +140,8 @@ fun Block.shr(name: String?, v: Value, amount: Value) = inst {
     ShrInst(this, name, v, amount)
 }
 
-fun Block.ashr(name: String?, v: Value, amount: Value) = inst {
-    AShrInst(this, name, v, amount)
+fun Block.shru(name: String?, v: Value, amount: Value) = inst {
+    ShrUInst(this, name, v, amount)
 }
 
 fun Block.and(name: String?, lhs: Value, rhs: Value) = inst {

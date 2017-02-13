@@ -10,9 +10,9 @@ import java.math.BigInteger
 /*
  * We define some basic types and classes here instead of in source, to make handling builtin types easier.
  */
-fun preludeModule(): Module {
+fun preludeModule(types: Types): Module {
     val moduleName = Qualified("Prelude", emptyList(), false)
-    val module = Module(moduleName)
+    val module = Module(moduleName, types)
 
     // Define the basic operators.
     module.ops["=="] = Operator(4, false)

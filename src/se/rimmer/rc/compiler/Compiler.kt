@@ -1,28 +1,28 @@
 package se.rimmer.rc.compiler
 
-import se.rimmer.rc.compiler.parser.SourceLocation
+import se.rimmer.rc.compiler.parser.Node
 
 open class Diagnostics {
     var warnings = 0
     var errors = 0
 
-    open fun warning(text: String, where: SourceLocation) {
+    open fun warning(text: String, where: Node) {
         warnings++
     }
 
-    open fun error(text: String, where: SourceLocation) {
+    open fun error(text: String, where: Node) {
         errors++
     }
 }
 
 class PrintDiagnostics: Diagnostics() {
-    override fun warning(text: String, where: SourceLocation) {
+    override fun warning(text: String, where: Node) {
         super.warning(text, where)
-        println("Warning: $text")
+        println("Warning at ${where.print()}: $text")
     }
 
-    override fun error(text: String, where: SourceLocation) {
+    override fun error(text: String, where: Node) {
         super.error(text, where)
-        println("Error: $text")
+        println("Error at ${where.print()}: $text")
     }
 }

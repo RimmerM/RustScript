@@ -16,7 +16,7 @@ interface ModuleHandler {
     fun findModule(path: List<String>): Module?
 }
 
-data class Module(val name: Qualified) {
+data class Module(val name: Qualified, val typeContext: Types) {
     val imports = HashMap<List<String>, Import>()
     val functions = HashMap<String, Function>()
     val templateFunctions = HashMap<String, Function>()
@@ -41,13 +41,31 @@ data class Import(
     val excludedSymbols: Set<String>?
 )
 
+fun Module.defineAlias(name: String, to: Type): AliasType {
+    if(types.containsKey(name)) {
+        throw ResolveError("redefinition of type $name")
+    }
+
+    val alias = AliasType(null, this.name.extend(name), to, null)
+    types[name] = alias
+    return alias
+}
+
 fun Module.defineRecord(name: String): RecordType {
+    if(types.containsKey(name)) {
+        throw ResolveError("redefinition of type $name")
+    }
+
     val r = RecordType(null, this.name.extend(name), null)
     types[name] = r
     return r
 }
 
 fun Module.defineCon(to: RecordType, name: String, index: Int, content: Type?): Con {
+    if(constructors.containsKey(name)) {
+        throw ResolveError("redefinition of type constructor $name")
+    }
+
     val q = to.name.extend(name)
     val con = Con(q, index, to, content)
     to.constructors.add(con)
@@ -88,7 +106,6 @@ fun TypeClass.defineFun(name: String, ret: Type, vararg args: Pair<String, Type>
 fun Function.defineArg(name: String, type: Type): Arg {
     val a = Arg(body, name, type, args.size)
     args[name] = a
-    emptyArray<Unit>().map {  }
     return a
 }
 
@@ -135,4 +152,3 @@ private fun <T> findHelper(module: Module, find: Module.(String) -> T?, name: Qu
 }
 
 class ResolveError(text: String): Exception(text)
-

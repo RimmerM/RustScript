@@ -69,7 +69,7 @@ private fun FunctionBuilder.resolveMulti(ast: ASTMultiExpr, name: String?, resul
         return value!!
     } else {
         ast.list.forEach { resolveExpr(it, null, false, null) }
-        return Value(block, null, unitType)
+        return Value(block, null, PrimTypes.unitType)
     }
 }
 
@@ -103,7 +103,7 @@ private fun FunctionBuilder.resolveDecl(ast: ASTDeclExpr): Value {
         val content = ast.content ?: throw ResolveError("immutable variables must be initialized")
         resolveExpr(content, ast.name, true, null)
     }
-    return Value(block, null, unitType)
+    return Value(block, null, PrimTypes.unitType)
 }
 
 private fun FunctionBuilder.resolveVar(ast: ASTVarExpr, asRV: Boolean): Value {
@@ -173,7 +173,7 @@ private fun FunctionBuilder.resolveIf(name: String?, ast: ASTIfExpr, resultUsed:
             thenBlock.br(after)
             elseBlock.br(after)
         }
-        return Value(thenBlock, null, unitType)
+        return Value(thenBlock, null, PrimTypes.unitType)
     }
 }
 
@@ -234,7 +234,7 @@ private fun FunctionBuilder.resolveMultiIf(name: String?, ast: ASTMultiIfExpr, r
                 it.second.br(next)
             }
         }
-        return Value(block, null, unitType)
+        return Value(block, null, PrimTypes.unitType)
     }
 }
 
@@ -252,7 +252,7 @@ private fun FunctionBuilder.resolveWhile(name: String?, ast: ASTWhileExpr): Valu
     block.br(condBlock)
 
     block = quit
-    return Value(quit, name, unitType)
+    return Value(quit, name, PrimTypes.unitType)
 }
 
 private fun FunctionBuilder.resolveCall(name: String?, ast: ASTAppExpr, typeHint: Type?): Value {
@@ -367,33 +367,49 @@ private fun FunctionBuilder.resolveCoerce(name: String?, ast: ASTCoerceExpr): Va
 }
 
 private fun FunctionBuilder.resolveConstruct(name: String?, ast: ASTConstructExpr): Value {
-    val type = resolveType(function.module, ast.type, null)
-    when(type) {
-        is RecordType -> {
+    // TODO: Should we also support constructing aliases, ints etc through implicit constructor symbols?
+    val con = resolveCon(function.module, ast.con)
+    val args = ast.args.map { resolveExpr(it, null, true, null) }
+    return resolveConstruct(name, con, args)
+}
 
-        }
-        is AliasType -> {
+private fun FunctionBuilder.resolveConstruct(name: String?, con: Con, args: List<Value>): Value {
+    if(args.size > 1) {
+        (con.content as? TupType)?.let {
+            if(it.fields.size != args.size) throw ResolveError("incorrect number of arguments to constructor")
+        } ?: throw ResolveError("only tuples can have multiple arguments")
+    } else if(args.size == 1) {
+        val c = con.content ?: throw ResolveError("incorrect number of arguments to constructor")
 
+        val a = args.first()
+        if(a is TupInst) {
+
+        } else if(!typesCompatible(a.type, c)) {
+            throw ResolveError("incorrect argument type to constructor")
         }
     }
 
-    throw NotImplementedError()
+    return block.record(name, con.parent, con, args)
 }
 
 private fun FunctionBuilder.resolveTup(name: String?, ast: ASTTupExpr): Value {
-    val args = ArrayList<Value>()
-    val type = TupType()
-    ast.args.forEachIndexed { i, it ->
-        val v = resolveExpr(it.content, null, true, null)
-        args.add(v)
-        type.fields.add(Field(it.name, i, v.type, type, v.type is RefType))
-    }
+    val args = ast.args.map { resolveExpr(it.content, null, true, null) }
+    val type = TupType(emptyList(), findTupLayout(function.module, function.module.typeContext.layouts, args.iterator()) {it.type})
+    val fields = ast.args.mapIndexed { i, it -> Field(it.name, i, args[i].type, type, false) }
+    type.fields = fields
     return block.tup(name, type, args)
 }
 
 private fun FunctionBuilder.resolveTupUpdate(name: String?, ast: ASTTupUpdateExpr): Value {
     val target = resolveExpr(ast.value, null, true, null)
-    throw NotImplementedError()
+    val type = canonicalType(target.type) as? TupType ?: throw ResolveError("only tuples can update their fields")
+
+    val values = ast.args.map { a ->
+        val f = type.fields.find { it.name == a.name } ?: throw ResolveError("the field ${a.name} does not exist in type $type")
+        val v = resolveExpr(a.content, null, true, f.type)
+        f.index to v
+    }
+    return block.updateField(name, target, values)
 }
 
 private fun FunctionBuilder.resolveCase(name: String?, ast: ASTCaseExpr, resultUsed: Boolean): Value {
@@ -461,6 +477,7 @@ private fun canonicalType(it: Type): Type {
             }
             return it
         }
+        is AliasType -> return it.to
         else -> return it
     }
 }

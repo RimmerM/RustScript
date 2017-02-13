@@ -1,17 +1,15 @@
 package se.rimmer.rc.compiler.resolve
 
-import se.rimmer.rc.compiler.parser.ForeignDecl
 import se.rimmer.rc.compiler.parser.Qualified
 
 data class Operator(val precedence: Int, val isRight: Boolean)
 
 class ForeignFunction(
-    var ast: ForeignDecl?,
     val module: Module,
     val name: Qualified,
     val externalName: String,
     val from: String?,
-    var type: FunType? = null
+    var type: FunType
 )
 
 class Function(val module: Module, val name: Qualified) {

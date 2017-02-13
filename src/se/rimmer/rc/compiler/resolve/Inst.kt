@@ -59,7 +59,7 @@ class CmpUInst(block: Block, name: String?, val lhs: Value, val rhs: Value, val 
  */
 class ShlInst(block: Block, name: String?, val arg: Value, val amount: Value): Inst(block, name, arg.type, listOf(arg, amount))
 class ShrInst(block: Block, name: String?, val arg: Value, val amount: Value): Inst(block, name, arg.type, listOf(arg, amount))
-class AShrInst(block: Block, name: String?, val arg: Value, val amount: Value): Inst(block, name, arg.type, listOf(arg, amount))
+class ShrUInst(block: Block, name: String?, val arg: Value, val amount: Value): Inst(block, name, arg.type, listOf(arg, amount))
 class AndInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
 class OrInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
 class XorInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst(block, name, lhs.type, listOf(lhs, rhs))
@@ -67,9 +67,9 @@ class XorInst(block: Block, name: String?, val lhs: Value, val rhs: Value): Inst
 /* Stack instructions. */
 class AllocaInst(block: Block, name: String?, type: Type): Inst(block, name, type, emptyList())
 class LoadInst(block: Block, name: String?, type: Type, val value: Value): Inst(block, name, type, listOf(value))
-class StoreInst(block: Block, name: String?, val value: Value, val to: Value): Inst(block, name, unitType, listOf(value, to))
+class StoreInst(block: Block, name: String?, val value: Value, val to: Value): Inst(block, name, PrimTypes.unitType, listOf(value, to))
 class LoadFieldInst(block: Block, name: String?, type: Type, val from: Value, val field: Int): Inst(block, name, type, listOf(from))
-class StoreFieldInst(block: Block, name: String?, val value: Value, val to: Value, val field: Int): Inst(block, name, unitType, listOf(value, to))
+class StoreFieldInst(block: Block, name: String?, val value: Value, val to: Value, val field: Int): Inst(block, name, PrimTypes.unitType, listOf(value, to))
 
 /* Construction instructions. */
 class RecordInst(block: Block, name: String?, type: RecordType, val con: Con, val fields: List<Value>): Inst(block, name, type, fields)
@@ -82,16 +82,25 @@ class FunInst(block: Block, name: String?, type: FunType, val function: Function
 class CallInst(block: Block, name: String?, val function: Function, val args: List<Value>): Inst(block, name, function.returnType!!, args)
 class CallDynInst(block: Block, name: String?, type: Type, val function: Value, val args: List<Value>): Inst(block, name, type, args)
 class CallForeignInst(block: Block, name: String?, type: Type, val function: ForeignFunction, val args: List<Value>): Inst(block, name, type, args)
-class CastPrimInst(block: Block, name: String?, type: Type, val source: Value): Inst(block, name, type, listOf(source))
 
 /* Record value instructions. */
 class GetFieldInst(block: Block, name: String?, type: Type, val from: Value, val field: Int): Inst(block, name, type, listOf(from))
 class UpdateFieldInst(block: Block, name: String?, val from: Value, val updates: List<Pair<Int, Value>>): Inst(block, name, from.type, updates.map {it.second} + from)
 
-/* Control flow. */
-class IfInst(block: Block, name: String?, val condition: Value, val then: Block, val otherwise: Block): Inst(block, name, unitType, listOf(condition))
-class BrInst(block: Block, name: String?, val to: Block): Inst(block, name, unitType, emptyList())
+/*
+ * Control flow.
+ */
+
+// Conditional branch to one of two blocks.
+class IfInst(block: Block, name: String?, val condition: Value, val then: Block, val otherwise: Block): Inst(block, name, PrimTypes.unitType, listOf(condition))
+
+// Unconditional branch to a different block.
+class BrInst(block: Block, name: String?, val to: Block): Inst(block, name, PrimTypes.unitType, emptyList())
+
+// Return the provided value to the parent function.
 class RetInst(block: Block, val value: Value): Inst(block, null, value.type, listOf(value))
+
+// ϕ-node, like LLVM. If any are used, they must be the first instructions in the block.
 class PhiInst(block: Block, name: String?, type: Type, val values: List<Pair<Value, Block>>): Inst(block, name, type, values.map { it.first })
 
 val Inst.isTerminating: Boolean get() = when(this) {

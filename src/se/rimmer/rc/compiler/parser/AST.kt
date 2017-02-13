@@ -22,6 +22,10 @@ open class Node(
         sourceEnd.column = n.sourceEnd.column
         sourceModule = n.sourceModule
     }
+
+    fun print(): String {
+        return "$sourceModule, line ${sourceStart.line}:${sourceStart.column}"
+    }
 }
 
 class Module(val name: Qualified) {
@@ -90,7 +94,7 @@ data class WhileExpr(val cond: Expr, val content: Expr): Expr()
 data class AssignExpr(val target: Expr, val value: Expr): Expr()
 data class CoerceExpr(val target: Expr, val type: Type): Expr()
 data class FieldExpr(val target: Expr, val field: Expr): Expr()
-data class ConstructExpr(val type: Type, val args: List<Expr>): Expr()
+data class ConstructExpr(val con: ConType, val args: List<Expr>): Expr()
 data class TupExpr(val args: List<TupArg>): Expr()
 data class TupUpdateExpr(val value: Expr, val args: List<TupArg>): Expr()
 data class ArrayExpr(val values: List<Expr>): Expr()

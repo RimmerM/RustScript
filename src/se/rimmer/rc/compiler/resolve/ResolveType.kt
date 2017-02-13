@@ -1,6 +1,5 @@
 package se.rimmer.rc.compiler.resolve
 
-import se.rimmer.rc.compiler.parser.extend
 import se.rimmer.rc.compiler.parser.AppType as ASTAppType
 import se.rimmer.rc.compiler.parser.ArrayType as ASTArrayType
 import se.rimmer.rc.compiler.parser.ClassDecl as ASTClassDecl
@@ -18,69 +17,29 @@ import se.rimmer.rc.compiler.parser.TypeDecl as ASTTypeDecl
 
 fun Type.isBoolean() = this is IntType && this.kind === IntKind.Bool
 
-fun resolveTypes(module: Module, decls: List<ASTDecl>) {
-    // Prepare by adding all defined types.
-    decls.forEach {
-        when(it) {
-            is ASTTypeDecl -> {
-                if(module.types.containsKey(it.type.name)) {
-                    throw ResolveError("redefinition of type ${it.type.name}")
-                }
-                module.types[it.type.name] = AliasType(it, unitType)
-            }
-            is ASTDataDecl -> {
-                if(module.types.containsKey(it.type.name)) {
-                    throw ResolveError("redefinition of type ${it.type.name}")
-                }
+fun resolveCon(module: Module, con: ASTConType): Con {
+    return module.findCon(con.name) ?: throw ResolveError("constructor ${con.name} not found")
+}
 
-                val name = it.type.name
-                val record = RecordType(it, module.name.extend(name), null)
-
-                it.type.kind.forEachIndexed { i, it ->
-                    record.generics[it] = GenType(i)
-                }
-
-                // The constructors are declared here, but resolved later.
-                val cons = it.cons.mapIndexed { i, (name) -> Con(module.name.extend(name), i, record) }
-                cons.forEach {
-                    if(module.constructors.containsKey(it.name.name)) {
-                        throw ResolveError("redefinition of type constructor ${it.name.name}")
-                    }
-                    module.constructors[it.name.name] = it
-                }
-
-                record.constructors.addAll(cons)
-                module.types[name] = record
-            }
-        }
+fun resolveApplicableType(module: Module, type: ASTType, gen: GenMap?): Type {
+    val result = when(type) {
+        is ASTTupType -> resolveTupType(module, type, gen)
+        is ASTGenType -> resolveGenType(module, type, gen)
+        is ASTAppType -> resolveAppType(module, type, gen)
+        is ASTConType -> resolveConType(module, type, gen)
+        is ASTFunType -> resolveFunType(module, type, gen)
+        is ASTArrayType -> resolveArrayType(module, type, gen)
+        is ASTMapType -> resolveMapType(module, type, gen)
+        else -> throw NotImplementedError()
     }
-
-    // When all names are defined, start resolving the types.
-    module.types.forEach { _, t ->
-        when(t) {
-            is AliasType -> defineAlias(module, t)
-            is RecordType -> defineRecord(module, t)
-        }
-    }
-
-    module.constructors.forEach { _, u -> defineCon(module, u) }
+    return resolveDefinition(module, result)
 }
 
 fun resolveType(module: Module, type: ASTType, gen: GenMap?): Type {
-    val result = when(type) {
-        is ASTTupType -> resolveTupType(module, type, context)
-        is ASTGenType -> resolveGenType(module, type, context)
-        is ASTAppType -> resolveAppType(module, type, context)
-        is ASTConType -> resolveConType(module, type, context)
-        is ASTFunType -> resolveFunType(module, type, context)
-        is ASTArrayType -> resolveArrayType(module, type, context)
-        is ASTMapType -> resolveMapType(module, type, context)
-        else -> throw NotImplementedError()
-    }
-
+    val result = resolveApplicableType(module, type, gen)
     when(result) {
-        is AliasType -> defineAlias(module, result)
-        is RecordType -> defineRecord(module, result)
+        is AliasType -> if(result.generics.isNotEmpty()) throw ResolveError("cannot use a generic type here")
+        is RecordType -> if(result.generics.isNotEmpty()) throw ResolveError("cannot use a generic type here")
     }
     return result
 }
@@ -93,53 +52,63 @@ fun resolveConType(module: Module, type: ASTConType, gen: GenMap?): Type {
 
 fun resolveFunType(module: Module, type: ASTFunType, gen: GenMap?): Type {
     val args = type.args.mapIndexed { i, it ->
-        FunArg(it.name, i, resolveType(module, type, context))
+        FunArg(it.name, i, resolveType(module, type, gen))
     }
-    val ret = resolveType(module, type.ret, context)
+    val ret = resolveType(module, type.ret, gen)
     return FunType(args, ret)
 }
 
 fun resolveArrayType(module: Module, type: ASTArrayType, gen: GenMap?): Type {
-    val content = resolveType(module, type.type, context)
+    val content = resolveType(module, type.type, gen)
     return ArrayType(content)
 }
 
 fun resolveMapType(module: Module, type: ASTMapType, gen: GenMap?): Type {
-    val from = resolveType(module, type.from, context)
-    val to = resolveType(module, type.from, context)
+    val from = resolveType(module, type.from, gen)
+    val to = resolveType(module, type.from, gen)
     return MapType(from, to)
 }
 
-fun resolveTupType(module: Module, type: ASTTupType, gen: GenMap?): Type {
-    val tuple = TupType()
-    type.fields.forEachIndexed { i, it ->
-        val fieldType = resolveType(module, it.type, context)
-        tuple.fields.add(Field(it.name, i, fieldType, tuple, it.mutable))
+fun <T> findTupLayout(module: Module, lookup: LayoutLookup, fields: Iterator<T>, getType: (T) -> Type): TupLayout {
+    if(fields.hasNext()) {
+        val type = getType(fields.next())
+
+        lookup.next[type]?.let {
+            return findTupLayout(module, it, fields, getType)
+        }
+
+        val next = LayoutLookup(lookup.layout + type)
+        lookup.next[type] = next
+        return findTupLayout(module, next, fields, getType)
+    } else {
+        return lookup.layout
     }
-    return tuple
+}
+
+fun resolveTupType(module: Module, type: ASTTupType, gen: GenMap?): Type {
+    val layout = findTupLayout(module, module.typeContext.layouts, type.fields.iterator()) {resolveType(module, it.type, gen)}
+    val tup = TupType(emptyList(), layout)
+    val fields = type.fields.mapIndexed { i, it ->
+        Field(it.name, i, layout[i], tup, it.mutable)
+    }
+    tup.fields = fields
+    return tup
 }
 
 fun resolveAppType(module: Module, type: ASTAppType, gen: GenMap?): Type {
     // Find the base type and instantiate it for these arguments.
-    val base = resolveType(module, type.base, context)
-    val args = type.apps.map { resolveType(module, type, context) }
+    val base = resolveApplicableType(module, type.base, gen)
+    val args = type.apps.map { resolveType(module, type, gen) }
     return when(base) {
-        is AliasType -> {
-            if(base.generics.size != args.size) {
-                throw ResolveError("incorrect number of type arguments to type $base")
-            }
-
-
-            instantiateType(module, base.to, context)
-        }
-        is RecordType -> instantiateType(module, base, context)
+        is AliasType -> instantiateAlias(module, base, args)
+        is RecordType -> instantiateRecord(module, base, args)
         else -> throw ResolveError("${type.base} is not a generic type")
     }
 }
 
 fun resolveGenType(module: Module, type: ASTGenType, gen: GenMap?): Type {
-    if(context != null) {
-        context.generics[type.name]?.let { return it }
+    if(gen != null) {
+        gen[type.name]?.let { return it }
     }
     throw ResolveError("undefined generic type '${type.name}'")
 }
@@ -150,27 +119,42 @@ fun typesCompatible(a: Type, b: Type): Boolean {
         is IntType -> b is IntType && a.kind === b.kind
         is FloatType -> b is FloatType && a.kind === b.kind
         is StringType -> b is StringType
-        is UnitType -> b is UnitType
         is ErrorType -> b is ErrorType
         is RefType -> b is RefType && typesCompatible(a.to, b.to)
         else -> throw NotImplementedError()
     }
 }
 
-private fun instantiateType(module: Module, type: Type, gen: GenMap): Type {
-    return when(type) {
-        is UnitType, is ErrorType, is IntType, is FloatType, is StringType -> type
-        is RefType -> RefType(instantiateType(module, type.to, context))
-        is AliasType -> {
-            instantiateType(module, type, context)
+private fun instantiateAlias(module: Module, type: AliasType, args: List<Type>): AliasType {
+    return AliasType(null, type.name, instantiateType(module, type.to, args), type.derivedFrom ?: type)
+}
+
+private fun instantiateRecord(module: Module, type: RecordType, args: List<Type>): RecordType {
+    val record = RecordType(null, type.name, type)
+    type.constructors.forEach {
+        val content = it.content?.let {
+            instantiateType(module, it, args)
         }
-        is ArrayType -> ArrayType(instantiateType(module, type.content, context))
-        is MapType -> MapType(instantiateType(module, type.from, context), instantiateType(module, type.to, context))
-        is FunType -> FunType(type.args.map { FunArg(it.name, it.index, instantiateType(module, it.type, context)) }, instantiateType(module, type.result, context))
+        record.constructors.add(if(content !== it.content) Con(it.name, it.index, record, content) else it)
+    }
+    return record
+}
+
+private fun instantiateType(module: Module, type: Type, args: List<Type>): Type {
+    return when(type) {
+        is ErrorType, is IntType, is FloatType, is StringType -> type
+        is GenType -> args[type.index]
+        is RefType -> RefType(instantiateType(module, type.to, args))
+        is AliasType -> instantiateAlias(module, type, args)
+        is RecordType -> instantiateRecord(module, type, args)
+        is ArrayType -> ArrayType(instantiateType(module, type.content, args))
+        is MapType -> MapType(instantiateType(module, type.from, args), instantiateType(module, type.to, args))
+        is FunType -> FunType(type.args.map { FunArg(it.name, it.index, instantiateType(module, it.type, args)) }, instantiateType(module, type.result, args))
         is TupType -> {
-            val tup = TupType()
-            type.fields.forEach {
-                tup.fields.add(Field(it.name, it.index, instantiateType(module, it.type, context), tup, it.mutable))
+            val layout = findTupLayout(module, module.typeContext.layouts, type.layout.iterator()) {instantiateType(module, it, args)}
+            val tup = TupType(emptyList(), layout)
+            tup.fields = type.fields.map {
+                Field(it.name, it.index, layout[it.index], tup, it.mutable)
             }
             tup
         }
@@ -178,18 +162,26 @@ private fun instantiateType(module: Module, type: Type, gen: GenMap): Type {
     }
 }
 
-private fun defineAlias(module: Module, type: AliasType): AliasType {
+// Finishes the definition of a type defined in the module, if needed.
+fun resolveDefinition(module: Module, type: Type): Type {
+    when(type) {
+        is AliasType -> resolveAlias(module, type)
+        is RecordType -> resolveRecord(module, type)
+    }
+    return type
+}
+
+// Resolves the target of an alias, if it was unresolved.
+fun resolveAlias(module: Module, type: AliasType): AliasType {
     type.ast?.let {
         type.ast = null
-        it.type.kind.forEachIndexed { i, it ->
-            type.generics[it] = GenType(i)
-        }
         type.to = resolveType(module, it.target, type.generics)
     }
     return type
 }
 
-private fun defineRecord(module: Module, type: RecordType): RecordType {
+// Resolves the constructors in a record, if they were unresolved.
+fun resolveRecord(module: Module, type: RecordType): RecordType {
     type.ast?.let { ast ->
         type.ast = null
         type.constructors.forEach {
@@ -201,8 +193,3 @@ private fun defineRecord(module: Module, type: RecordType): RecordType {
     }
     return type
 }
-
-private fun defineCon(module: Module, it: Con) {
-
-}
-
