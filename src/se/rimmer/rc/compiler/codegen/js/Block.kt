@@ -1,7 +1,11 @@
 package se.rimmer.rc.compiler.codegen.js
 
+import se.rimmer.rc.compiler.parser.IntLiteral
 import se.rimmer.rc.compiler.resolve.*
+import java.math.BigInteger
 import java.util.*
+
+val zero = IntLiteral(BigInteger.valueOf(0))
 
 fun genBlock(scope: VarScope, block: Block): BlockStmt {
     val stmts = ArrayList<Stmt>()
@@ -30,6 +34,34 @@ fun Value.use(scope: VarScope): Expr {
  */
 fun genInst(scope: VarScope, stmts: ArrayList<Stmt>, inst: Inst): Expr {
     val expr = when(inst) {
+        // TODO: Simulate smaller and larger integer types in JS.
+        is WidenInst -> inst.from.use(scope)
+        is TruncInst -> inst.from.use(scope)
+
+        is FloatToIntInst -> InfixExpr("|", inst.from.use(scope), IntExpr(0))
+        is IntToFloatInst -> inst.from.use(scope)
+
+        // TODO: Unsigned div, cmp, shift emulation
+        is AddInst -> InfixExpr("+", inst.lhs.use(scope), inst.rhs.use(scope))
+        is SubInst -> {
+            if(inst.lhs is Lit && inst.lhs.literal == zero) {
+                PrefixExpr("-", inst.rhs.use(scope))
+            } else {
+                InfixExpr("-", inst.lhs.use(scope), inst.rhs.use(scope))
+            }
+        }
+        is MulInst -> InfixExpr("*", inst.lhs.use(scope), inst.rhs.use(scope))
+        is DivInst -> InfixExpr("/", inst.lhs.use(scope), inst.rhs.use(scope))
+        is RemInst -> InfixExpr("%", inst.lhs.use(scope), inst.rhs.use(scope))
+
+        is CmpInst -> InfixExpr("===", inst.lhs.use(scope), inst.rhs.use(scope))
+
+        is ShlInst -> InfixExpr("<<", inst.arg.use(scope), inst.amount.use(scope))
+        is ShrInst -> InfixExpr(">>", inst.arg.use(scope), inst.amount.use(scope))
+        is AndInst -> InfixExpr("&", inst.lhs.use(scope), inst.rhs.use(scope))
+        is OrInst -> InfixExpr("|", inst.lhs.use(scope), inst.rhs.use(scope))
+        is XorInst -> InfixExpr("^", inst.lhs.use(scope), inst.rhs.use(scope))
+
         is AllocaInst -> {
             inst.uses.firstOrNull()?.let {
                 // If the first use is a store within the same block, we let that instruction declare the variable.
@@ -122,17 +154,6 @@ fun genInst(scope: VarScope, stmts: ArrayList<Stmt>, inst: Inst): Expr {
             val args = inst.function.args.map { funScope.genVar(it.value.name, it.value.uses.size) }
             FunExpr(null, args, genBlock(funScope, inst.function.body).stmts)
         }
-        is CastPrimInst -> {
-            val source = inst.source.use(scope)
-            val target = inst.type as PrimType
-            when(target.prim) {
-                Primitive.String -> InfixExpr("+", StringExpr(""), source)
-                Primitive.Double -> source
-                Primitive.Int -> InfixExpr("|", source, IntExpr(0))
-                Primitive.Bool -> PrefixExpr("!", PrefixExpr("!", source))
-            }
-        }
-        is PrimInst -> genPrimitive(scope, inst.op, inst.args)
         is CallInst -> {
             throw NotImplementedError()
         }
@@ -165,11 +186,11 @@ fun genInst(scope: VarScope, stmts: ArrayList<Stmt>, inst: Inst): Expr {
         else -> throw NotImplementedError()
     }
 
-    if(inst.uses.size > 1 && inst.type !is UnitType && !shouldAlwaysInline(expr)) {
+    if(inst.uses.size > 1 && inst.type !== PrimTypes.unitType && !shouldAlwaysInline(expr)) {
         val v = scope.genVar(inst.name, inst.uses.size)
         stmts.add(VarDecl(v, expr))
         inst.codegen = VarExpr(v)
-    } else if(inst.type is UnitType && expr !is UndefinedExpr) {
+    } else if(inst.type === PrimTypes.unitType && expr !is UndefinedExpr) {
         stmts.add(ExprStmt(expr))
         inst.codegen = UndefinedExpr
     } else {
