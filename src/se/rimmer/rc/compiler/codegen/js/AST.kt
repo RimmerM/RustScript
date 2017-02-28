@@ -1,6 +1,5 @@
 package se.rimmer.rc.compiler.codegen.js
 
-import se.rimmer.rc.compiler.parser.Qualified
 import java.util.*
 
 class Variable(val fullName: String, var refCount: Int)
